@@ -430,7 +430,7 @@ def build_demand(wb):
         ws.append(["", text])
         ws.merge_cells(start_row=ws.max_row, start_column=2, end_row=ws.max_row, end_column=6)
         ws.cell(row=ws.max_row, column=2).alignment = WRAP
-        ws.row_dimensions[ws.max_row].height = 30
+        ws.row_dimensions[ws.max_row].height = 45
 
     for col, width in zip("ABCDEF", [18, 44, 22, 22, 22, 58]):
         ws.column_dimensions[col].width = width
@@ -557,7 +557,7 @@ def build_memory(wb):
     ws.append([])
     ws.append(["Nombre", "Concepto"] + [a[0] for a in ALTS] + ["Unidad", "Cómo se obtiene"])
     style_header(ws, ws.max_row, ncols)
-    ws.row_dimensions[ws.max_row].height = 30
+    ws.row_dimensions[ws.max_row].height = 45
 
     rows, r = {}, ws.max_row
     for item in MEMORY:
@@ -792,7 +792,7 @@ def build_inventory(wb):
     ws.append(["", "Falla", "Réplicas que quedan", "Capacidad con holgura (peticiones/s)",
                "¿Cubre el pico con holgura?", "Capacidad al 100 % (peticiones/s)", "¿Cubre el pico al 100 %?"])
     style_header(ws, ws.max_row, ncols)
-    ws.row_dimensions[ws.max_row].height = 30
+    ws.row_dimensions[ws.max_row].height = 45
     for label, lost in FAILURES:
         r = ws.max_row + 1
         ws.cell(row=r, column=2, value=label)
@@ -824,7 +824,7 @@ def build_inventory(wb):
     ws.append(["", "Escenario", "Pico (peticiones/s)", "Capacidad por réplica (peticiones/s)",
                "Nodos (tolera 1 nodo)", "GPUs", "Nodos si se quiere tolerar un rack"])
     style_header(ws, ws.max_row, ncols)
-    ws.row_dimensions[ws.max_row].height = 30
+    ws.row_dimensions[ws.max_row].height = 45
     for label, dm, cm in SCENARIOS:
         r = ws.max_row + 1
         ws.cell(row=r, column=2, value=label)
