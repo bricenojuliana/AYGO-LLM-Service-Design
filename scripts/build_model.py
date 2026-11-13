@@ -27,7 +27,7 @@ SRC = "Enunciado §{}"
 # (name, label, value, unit, number_format, source, classification, note)
 INPUTS = [
     ("General", None),
-    ("RESPONSABLE", "Persona responsable de verificar", "(pendiente)", "-", "@",
+    ("RESPONSABLE", "Persona responsable de verificar", "Juliana Briceño", "-", "@",
      "Decisión del equipo", "Documentado", "Trabajo individual"),
     ("Demanda", None),
     ("DAU", "Usuarios activos diarios", 200_000, "usuarios/día", "#,##0",
