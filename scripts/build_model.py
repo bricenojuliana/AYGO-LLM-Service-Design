@@ -187,6 +187,13 @@ def add_name(wb, name, sheet, col, row):
     wb.defined_names[name] = DefinedName(name, attr_text=f"{sheet}!${col}${row}")
 
 
+def fit_page(ws):
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
 def title(ws, text, note):
     ws["A1"] = text
     ws["A1"].font = Font(bold=True, size=14)
@@ -265,8 +272,7 @@ def build_demand(wb):
                "¿Cabe en la ventana?", "Frente a la base"])
     style_header(ws, ws.max_row, ncols)
     for n in INPUT_LENGTHS:
-        ws.append([])
-        r = ws.max_row
+        r = ws.max_row + 1
         ws.cell(row=r, column=2, value=n).font = INPUT_FONT
         ws.cell(row=r, column=3, value=f"=RPS_PICO*B{r}")
         ws.cell(row=r, column=4, value=f"=B{r}+TOK_SALIDA")
@@ -287,8 +293,7 @@ def build_demand(wb):
                "¿Cabe en la ventana?", "¿Respeta la salida máxima?"])
     style_header(ws, ws.max_row, ncols)
     for n in OUTPUT_LENGTHS:
-        ws.append([])
-        r = ws.max_row
+        r = ws.max_row + 1
         ws.cell(row=r, column=2, value=n).font = INPUT_FONT
         ws.cell(row=r, column=3, value=f"=RPS_PICO*B{r}")
         ws.cell(row=r, column=4, value=f"=TOK_ENTRADA+B{r}")
@@ -309,13 +314,12 @@ def build_demand(wb):
                "Tokens vivos, base (cota)", ""])
     style_header(ws, ws.max_row, ncols)
     for t in SYSTEM_TIMES:
-        ws.append([])
-        r = ws.max_row
+        r = ws.max_row + 1
         ws.cell(row=r, column=2, value=t).font = INPUT_FONT
         ws.cell(row=r, column=3, value=f"=RPS_PICO*B{r}")
         ws.cell(row=r, column=4, value=f"=RPS_PICO_ESTRES*B{r}")
         ws.cell(row=r, column=5, value=f"=C{r}*TOK_POR_PET")
-        for col, fmt in zip((2, 3, 4, 5), ("0", "0", "0", "#,##0")):
+        for col, fmt in zip((2, 3, 4, 5), ("0", "#,##0", "#,##0", "#,##0")):
             ws.cell(row=r, column=col).number_format = fmt
         style_body(ws, r, ncols)
     ws.append(["", "22 s = 2 s de TTFT + 500 tokens × 40 ms. Son límites p95, no promedios, así que "
@@ -376,6 +380,8 @@ def main():
     build_inputs(wb)
     build_demand(wb)
     build_log(wb)
+    for ws in wb.worksheets:
+        fit_page(ws)
     wb.calculation = CalcProperties(fullCalcOnLoad=True)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT)
