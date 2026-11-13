@@ -28,4 +28,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 1: demand (requests, tokens, concurrency, sensitivity, 2x stress)
 - [x] Step 2: model and memory (Llama 3.1 70B BF16 vs FP8 on H100)
 - [x] Step 3: performance (synthetic 2 req/s per replica + order-of-magnitude checks)
-- [ ] Step 4: replicas, nodes and headroom
+- [x] Step 4: replicas, nodes and headroom (9 nodes, 72 GPUs, 18 replicas)
+- [ ] Step 5: service architecture

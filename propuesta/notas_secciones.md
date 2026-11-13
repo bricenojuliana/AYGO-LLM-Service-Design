@@ -34,3 +34,13 @@ Lo que debe ir en cada sección del Word. Se completa paso a paso; el texto fina
 - Sensibilidad: con 30 % menos de rendimiento, 1,4 peticiones/s por réplica.
 - FP8 queda como variante a futuro: podría ahorrar GPUs, pero falta medir velocidad y calidad en español.
 - Incluir el plan de validación (procedimiento del §8.2) tal como está en la hoja Rendimiento.
+
+## 6. Réplicas y nodos
+
+- Diferenciar réplica (copia del modelo, 4 GPUs) y nodo (servidor DGX H100, 8 GPUs, 2 réplicas).
+- Con 70 % de utilización: 15 réplicas mínimas → 8 nodos sin fallas → 9 nodos para tolerar la pérdida de uno. Total: 72 GPUs, 18 réplicas, 3 racks de cómputo.
+- El pico usa el 57,9 % de la capacidad instalada, y el 65,1 % tras perder un nodo.
+- Por réplica: ~23 peticiones en curso en el pico y ~26 tras la falla. Caben en memoria (50).
+- Fallas: GPU y nodo cubiertos con holgura. Un rack completo NO: quedan 12 réplicas y 16,8 peticiones/s con holgura. Al 100 % sí alcanzaría (24/s), pero sin margen. Para prometer tolerancia a rack hacen falta 11 nodos.
+- Escenarios: demanda ×2 → 16 nodos; rendimiento −30 % → 12 nodos; ambos → 23 nodos.
+- Recordar que la capacidad no prueba la latencia durante la falla (detección, reintentos, calentamiento).

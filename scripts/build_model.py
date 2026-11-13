@@ -102,6 +102,14 @@ INPUTS = [
      "No es un benchmark real; perfil 4.000 entrada / 500 salida"),
     ("CAIDA_SENS", "Caída de rendimiento para la sensibilidad", 0.30, "%", "0%",
      SRC.format("14.4"), "Documentado", ""),
+    ("Réplicas, nodos y holgura", None),
+    ("UTIL_DISENO", "Factor de utilización de diseño", 0.70, "%", "0%",
+     SRC.format("9") + " (ejemplo)", "Supuesto",
+     "Carga admitida frente a la capacidad del punto de operación; no es el % de GPU del monitoreo"),
+    ("GPUS_NODO", "GPUs por nodo (servidor DGX H100)", 8, "GPUs", "0",
+     "Guía de usuario DGX H100/H200 de NVIDIA", "Documentado", ""),
+    ("NODOS_POR_RACK", "Nodos de cómputo por rack", 3, "nodos", "0",
+     SRC.format("12.2") + " (ejemplo)", "Supuesto", "Se revisa con energía y refrigeración en el paso 7"),
     ("USO_UTIL", "Fracción de la memoria que se deja usar", 0.80, "%", "0%",
      SRC.format("7.4") + " (ejemplo)", "Supuesto", "El resto queda como holgura"),
     ("OVERHEAD_REPLICA", "Activaciones, motor y espacios de trabajo por réplica", 40, "GB", "0",
@@ -232,6 +240,14 @@ LOG = [
     ("Cómputo BF16 de la H100", "1.979 TFLOPS con dispersión; ~990 densos",
      "NVIDIA, página H100 (valor con sparsity) ÷ 2", "Media: NVIDIA no publica el denso en esa página",
      "Supuesto"),
+    ("Factor de utilización de diseño", "70 %", "Ejemplo del enunciado §9", "Media", "Supuesto"),
+    ("Inventario de cómputo",
+     '=NODOS&" nodos, "&GPUS_TOTAL&" GPUs, "&REPL_TOTAL&" réplicas, "&RACKS_COMPUTO&" racks"',
+     "Inventario: pico ÷ (capacidad × 70 % × 2 réplicas por nodo) + 1 nodo",
+     "Hereda la del dato sintético de capacidad", "Calculado"),
+    ("Dominio de falla cubierto", "Un nodo; no un rack completo",
+     "Inventario: tabla de fallas", "Baja", "Calculado"),
+    ("Nodos por rack", "3", "Ejemplo del enunciado §12.2", "Se revisa con energía en el paso 7", "Supuesto"),
 ]
 
 
@@ -698,6 +714,133 @@ def build_performance(wb):
     ws.freeze_panes = "A5"
 
 
+INVENTORY = [
+    ("Dimensionamiento", None),
+    ("REPL_POR_NODO", "Réplicas por nodo", "=INT(GPUS_NODO/GPUS_REPLICA)", "réplicas", "0",
+     "Cada réplica usa GPUs de un solo nodo, así el paralelismo tensorial no cruza la red"),
+    ("CAP_UTIL_REPL", "Carga admitida por réplica", "=CAP_REPLICA*UTIL_DISENO", "peticiones/s", "0.00",
+     "Capacidad × factor de utilización"),
+    ("REPL_MIN", "Réplicas mínimas sin contar fallas", "=ROUNDUP(RPS_PICO/CAP_UTIL_REPL,0)", "réplicas", "0",
+     "Pico ÷ carga admitida por réplica, redondeado hacia arriba"),
+    ("NODOS_SIN_FALLA", "Nodos para cubrir el pico sin fallas", "=ROUNDUP(RPS_PICO/(CAP_UTIL_REPL*REPL_POR_NODO),0)",
+     "nodos", "0", ""),
+    ("NODOS", "Nodos instalados", "=NODOS_SIN_FALLA+NODOS_PERDIDOS", "nodos", "0",
+     "Se suma el nodo que se puede perder (§4.3)"),
+    ("Inventario", None),
+    ("GPUS_TOTAL", "GPUs", "=NODOS*GPUS_NODO", "GPUs", "0", ""),
+    ("REPL_TOTAL", "Réplicas", "=NODOS*REPL_POR_NODO", "réplicas", "0", ""),
+    ("RACKS_COMPUTO", "Racks de cómputo", "=ROUNDUP(NODOS/NODOS_POR_RACK,0)", "racks", "0",
+     "Falta el rack de red y almacenamiento (paso 7)"),
+    ("Uso de la capacidad instalada", None),
+    ("USO_NORMAL", "Pico frente a la capacidad instalada", "=RPS_PICO/(REPL_TOTAL*CAP_REPLICA)", "%", "0.0%",
+     "El enunciado da 57,9 %"),
+    ("USO_FALLA_NODO", "Pico frente a la capacidad tras perder un nodo",
+     "=RPS_PICO/((REPL_TOTAL-REPL_POR_NODO)*CAP_REPLICA)", "%", "0.0%", "El enunciado da 65,1 %"),
+    ("Carga en cada réplica durante el pico", None),
+    ("CONC_REPL_NORMAL", "Peticiones en curso por réplica, sin fallas",
+     "=RPS_PICO/REPL_TOTAL*TIEMPO_SISTEMA", "peticiones", "0", "Ley de Little por réplica"),
+    ("CONC_REPL_FALLA", "Peticiones en curso por réplica, tras perder un nodo",
+     "=RPS_PICO/(REPL_TOTAL-REPL_POR_NODO)*TIEMPO_SISTEMA", "peticiones", "0",
+     "Debe quedar por debajo de lo que cabe en memoria"),
+    ("CABE_REPL_FALLA", "¿Cabe en el KV cache de la réplica?", '=IF(CONC_REPL_FALLA<=PET_MAX_PROM_BF16,"Sí","No")',
+     "-", "@", "Compara con la hoja Modelo y memoria (50 peticiones promedio)"),
+]
+
+# (label, replicas lost formula)
+FAILURES = [
+    ("Ninguna", "0"),
+    ("Una GPU (cae su réplica)", "1"),
+    ("Un nodo", "REPL_POR_NODO"),
+    ("Un rack de cómputo", "MIN(NODOS_POR_RACK,NODOS)*REPL_POR_NODO"),
+]
+
+# (label, demand multiplier, capacity multiplier)
+SCENARIOS = [
+    ("Base", "1", "1"),
+    ("Demanda ×2", "FACTOR_CRECIMIENTO", "1"),
+    ("Rendimiento −30 %", "1", "(1-CAIDA_SENS)"),
+    ("Demanda ×2 y rendimiento −30 %", "FACTOR_CRECIMIENTO", "(1-CAIDA_SENS)"),
+]
+
+
+def build_inventory(wb):
+    ws = wb.create_sheet("Inventario")
+    title(ws, "Réplicas, nodos y holgura",
+          "Una réplica es una copia del modelo (4 GPUs). Un nodo es un servidor físico (8 GPUs, 2 réplicas).")
+    ncols = 7
+    ws.append([])
+    ws.append(["Nombre", "Concepto", "Valor", "Unidad", "Cómo se obtiene", "", ""])
+    style_header(ws, ws.max_row, ncols)
+
+    for item in INVENTORY:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, unit, note])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key, "Inventario", "C", r)
+
+    # ---- Failure table
+    ws.append([])
+    ws.append(["Capacidad que queda ante cada falla (demanda base)"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Falla", "Réplicas que quedan", "Capacidad con holgura (peticiones/s)",
+               "¿Cubre el pico con holgura?", "Capacidad al 100 % (peticiones/s)", "¿Cubre el pico al 100 %?"])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 30
+    for label, lost in FAILURES:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=2, value=label)
+        ws.cell(row=r, column=3, value=f"=REPL_TOTAL-{lost}")
+        ws.cell(row=r, column=4, value=f"=C{r}*CAP_UTIL_REPL").number_format = "0.0"
+        ws.cell(row=r, column=5, value=f'=IF(D{r}>=RPS_PICO,"Sí","No")')
+        ws.cell(row=r, column=6, value=f"=C{r}*CAP_REPLICA").number_format = "0.0"
+        ws.cell(row=r, column=7, value=f'=IF(F{r}>=RPS_PICO,"Sí","No")')
+        style_body(ws, r, ncols)
+    for text in [
+        "\"Al 100 %\" significa trabajar justo en el punto donde aún se cumplen los SLOs, sin margen. Si la carga "
+        "varía un poco, la latencia se dispara.",
+        "El diseño promete tolerar un nodo. No promete tolerar un rack: para eso harían falta más nodos "
+        "(ver la tabla de escenarios).",
+        "Que la capacidad alcance no prueba que se cumpla la latencia durante la falla: faltan la detección, las "
+        "peticiones en curso, los reintentos y el calentamiento de réplicas (paso 10).",
+    ]:
+        ws.append(["", text])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7)
+        ws.cell(row=r, column=2).alignment = WRAP
+        ws.cell(row=r, column=2).font = NOTE_FONT
+        ws.row_dimensions[r].height = 30
+
+    # ---- Scenarios
+    ws.append([])
+    ws.append(["Escenarios de sensibilidad (§14.4)"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Escenario", "Pico (peticiones/s)", "Capacidad por réplica (peticiones/s)",
+               "Nodos (tolera 1 nodo)", "GPUs", "Nodos si se quiere tolerar un rack"])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 30
+    for label, dm, cm in SCENARIOS:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=2, value=label)
+        ws.cell(row=r, column=3, value=f"=RPS_PICO*{dm}").number_format = "0.00"
+        ws.cell(row=r, column=4, value=f"=CAP_REPLICA*{cm}").number_format = "0.00"
+        base = f"ROUNDUP(C{r}/(D{r}*UTIL_DISENO*REPL_POR_NODO),0)"
+        ws.cell(row=r, column=5, value=f"={base}+NODOS_PERDIDOS")
+        ws.cell(row=r, column=6, value=f"=E{r}*GPUS_NODO")
+        ws.cell(row=r, column=7, value=f"={base}+NODOS_POR_RACK")
+        style_body(ws, r, ncols)
+
+    for col, width in zip("ABCDEFG", [20, 46, 16, 20, 20, 18, 22]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -731,6 +874,7 @@ def main():
     build_demand(wb)
     build_memory(wb)
     build_performance(wb)
+    build_inventory(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)
