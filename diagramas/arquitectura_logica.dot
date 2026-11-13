@@ -1,0 +1,53 @@
+// Diagrama lógico con íconos: camino de una petición.
+// Generar: cd diagramas && dot -Tpng -Gdpi=170 arquitectura_logica.dot -o arquitectura_logica.png
+digraph logica {
+  graph [rankdir=LR, bgcolor="white", pad=0.4, nodesep=0.35, ranksep=0.55,
+         fontname="Noto Sans", fontsize=11, fontcolor="#3b3b3b", splines=spline,
+         label="Flechas sólidas: la petición va de 2 a 5; la respuesta vuelve por el mismo camino, palabra a palabra (○).   Punteadas: soporte y monitoreo.", labelloc=b, labeljust=l]
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=10.5,
+         color="#c9c2b6", fillcolor="#faf7f2", fontcolor="#2e2e2e", penwidth=1.1, margin="0.18,0.10"]
+  edge  [color="#8a8378", arrowsize=0.6, penwidth=1.0, fontname="Noto Sans", fontsize=9, fontcolor="#6b6459"]
+
+  usuario [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/usuario.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Usuario</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">(app o web)</FONT></TD></TR></TABLE>>, shape=box, style="rounded,filled", fillcolor="#efe9df"]
+
+  subgraph cluster_entrada {
+    label="Entrada"; labeljust=l; labelloc=t; style="rounded,dashed"; color="#d8d1c5";
+    dns [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/dns.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DNS</B></TD></TR></TABLE>>]
+    balance [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/balanceador.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Balanceador</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">+ terminación TLS</FONT></TD></TR></TABLE>>]
+  }
+
+  subgraph cluster_control {
+    label="Control de acceso y carga"; labeljust=l; labelloc=t; style="rounded,dashed"; color="#d8d1c5";
+    gateway [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/gateway.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Gateway de API</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">autenticación · cuotas</FONT><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">validación (≤ 8.192 tokens)</FONT></TD></TR></TABLE>>]
+    router [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/router.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Router con control</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">de admisión</FONT><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">(presupuesto de tokens)</FONT></TD></TR></TABLE>>]
+    cola [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/fila.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Fila acotada</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">espera máx. ~1 s</FONT></TD></TR></TABLE>>, shape=box, style="rounded,filled", fillcolor="#f4ece0"]
+  }
+
+  subgraph cluster_inferencia {
+    label="Inferencia · 18 réplicas"; labeljust=l; labelloc=t; style="rounded"; color="#b9c7c0"; bgcolor="#f3f7f5";
+    motor [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/motor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Motor de inferencia</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">(ej. vLLM)</FONT><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">lotes continuos · KV cache</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa"]
+    modelo [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/modelo.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Llama 3.1 70B BF16</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">4 GPUs por réplica</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa"]
+  }
+
+  subgraph cluster_ops {
+    label="Operación"; labeljust=l; labelloc=t; style="rounded,dashed"; color="#d8d1c5";
+    obs [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/metricas.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Métricas y trazas</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">(sin contenido de</FONT><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">conversaciones)</FONT></TD></TR></TABLE>>]
+    registro [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/registro.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Registro de modelos</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">y configuración</FONT></TD></TR></TABLE>>]
+    secretos [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/secretos.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Gestor de secretos</B></TD></TR></TABLE>>]
+  }
+
+  usuario -> dns [label=" 1", style=dashed]
+  usuario -> balance [label=" 2  HTTPS", dir=both, arrowtail=odot]
+  balance -> gateway [label=" 3", dir=both, arrowtail=odot]
+  gateway -> router [label=" 4", dir=both, arrowtail=odot]
+  router -> motor [label=" 5  hay espacio", dir=both, arrowtail=odot]
+  router -> cola [label=" sin espacio", style=dashed]
+  cola -> router [style=dashed, constraint=false]
+  motor -> modelo [dir=both]
+
+  gateway -> obs [style=dotted, arrowhead=none]
+  router -> obs [style=dotted, arrowhead=none]
+  motor -> obs [style=dotted, arrowhead=none]
+  registro -> motor [style=dotted, label=" pesos"]
+  secretos -> gateway [style=dotted]
+}

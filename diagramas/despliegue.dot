@@ -1,0 +1,57 @@
+// Diagrama de despliegue: dónde corre cada pieza.
+// Generar: cd diagramas && dot -Tpng -Gdpi=170 despliegue.dot -o despliegue.png
+digraph despliegue {
+  graph [rankdir=TB, bgcolor="white", pad=0.4, nodesep=0.3, ranksep=0.5, compound=true,
+         fontname="Noto Sans", fontsize=11, fontcolor="#3b3b3b", splines=spline,
+         label="Cada réplica usa 4 GPUs del mismo servidor, unidas por NVLink: el modelo no se reparte entre servidores.\lLos 9 nodos atienden tráfico a la vez; la holgura está repartida, no hay un nodo apagado de reserva.\lPerder un servidor quita 2 réplicas y quedan 16, suficientes para el pico. Perder un rack quita 6 y el diseño no lo cubre.\l",
+         labelloc=b, labeljust=l]
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=10.5,
+         color="#c9c2b6", fillcolor="#faf7f2", fontcolor="#2e2e2e", penwidth=1.1, margin="0.14,0.08"]
+  edge  [color="#8a8378", arrowsize=0.6, penwidth=1.0, fontname="Noto Sans", fontsize=9, fontcolor="#6b6459"]
+
+  internet [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="30" HEIGHT="30"><IMG SRC="iconos/internet.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Internet</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">usuarios en Latinoamérica</FONT></TD></TR></TABLE>>, fillcolor="#efe9df"]
+
+  subgraph cluster_sitio {
+    label="Sitio (ubicación por definir en el paso 7)"; labeljust=l; labelloc=t; style="rounded"; color="#b8b0a3";
+
+    subgraph cluster_rack4 {
+      label="Rack 4 · red, almacenamiento y servicios"; labeljust=l; labelloc=t; style="rounded,dashed"; color="#d8d1c5";
+      borde [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/gateway.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Borde ×2</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">firewall · balanceador · TLS</FONT></TD></TR></TABLE>>]
+      servicios [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/operacion.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Servidores de servicios ×3</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">gateway · router · fila · orquestador<BR/>métricas · registro de modelos · secretos</FONT></TD></TR></TABLE>>]
+      red [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/switch.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Switches ×2</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">red de servicio y operación</FONT></TD></TR></TABLE>>]
+      almac [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/almacenamiento.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Almacenamiento</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">pesos del modelo · imágenes · copias</FONT></TD></TR></TABLE>>]
+    }
+
+    subgraph cluster_rack1 {
+      label="Rack 1 · ~30,6 kW"; labeljust=l; labelloc=t; style="rounded"; color="#b9c7c0"; bgcolor="#f3f7f5";
+      n1 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 1</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n2 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 2</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n3 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 3</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+    }
+    subgraph cluster_rack2 {
+      label="Rack 2 · ~30,6 kW"; labeljust=l; labelloc=t; style="rounded"; color="#b9c7c0"; bgcolor="#f3f7f5";
+      n4 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 4</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n5 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 5</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n6 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 6</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+    }
+    subgraph cluster_rack3 {
+      label="Rack 3 · ~30,6 kW"; labeljust=l; labelloc=t; style="rounded"; color="#b9c7c0"; bgcolor="#f3f7f5";
+      n7 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 7</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n8 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 8</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+      n9 [label=<<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/servidor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>DGX H100 · nodo 9</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">2 réplicas × 4 GPUs</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa", width=2.1, fixedsize=false]
+    }
+  }
+
+  internet -> borde [label="  HTTPS", dir=both, arrowtail=odot]
+  borde -> servicios
+  servicios -> red
+  red -> n1 [lhead=cluster_rack1]
+  red -> n4 [lhead=cluster_rack2, label="  peticiones y respuestas"]
+  red -> n7 [lhead=cluster_rack3]
+  almac -> red [style=dotted, label="  pesos al arrancar"]
+
+  // mantener los nodos de cada rack en columna's nodes stacked
+  n1 -> n2 -> n3 [style=invis]
+  n4 -> n5 -> n6 [style=invis]
+  n7 -> n8 -> n9 [style=invis]
+}

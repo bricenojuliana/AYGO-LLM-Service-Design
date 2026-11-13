@@ -10,7 +10,8 @@ The deliverables themselves are written in Spanish. This repo only holds them pl
 |------|---------|
 | `modelo/modelo_calculo.xlsx` | Calculation model (inputs, decision log, and later demand, memory, inventory, power, costs, scenarios) |
 | `propuesta/` | Technical proposal (Word), added in later steps; `notas_secciones.md` holds working notes per section |
-| `scripts/` | Python scripts that generate the Excel and Word files |
+| `diagramas/` | Graphviz sources (`.dot`), rendered diagrams and hand-drawn line icons |
+| `scripts/` | Python scripts that generate the Excel, the diagrams and the Word file |
 
 ## Rebuilding the files
 
@@ -18,6 +19,7 @@ The deliverables themselves are written in Spanish. This repo only holds them pl
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/build_model.py
+.venv/bin/python scripts/build_diagrams.py   # needs Graphviz (`dot`)
 ```
 
 In the Excel file, blue values are inputs typed by hand. Everything else should come from formulas, so changing an input updates the rest.
@@ -29,4 +31,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 2: model and memory (Llama 3.1 70B BF16 vs FP8 on H100)
 - [x] Step 3: performance (synthetic 2 req/s per replica + order-of-magnitude checks)
 - [x] Step 4: replicas, nodes and headroom (9 nodes, 72 GPUs, 18 replicas)
-- [ ] Step 5: service architecture
+- [x] Step 5: service architecture (logical and deployment diagrams, overload sheet)
+- [ ] Step 6: networking and storage

@@ -44,3 +44,23 @@ Lo que debe ir en cada sección del Word. Se completa paso a paso; el texto fina
 - Fallas: GPU y nodo cubiertos con holgura. Un rack completo NO: quedan 12 réplicas y 16,8 peticiones/s con holgura. Al 100 % sí alcanzaría (24/s), pero sin margen. Para prometer tolerancia a rack hacen falta 11 nodos.
 - Escenarios: demanda ×2 → 16 nodos; rendimiento −30 % → 12 nodos; ambos → 23 nodos.
 - Recordar que la capacidad no prueba la latencia durante la falla (detección, reintentos, calentamiento).
+
+## 7. Arquitectura y despliegue
+
+Diagramas: `diagramas/arquitectura_logica.png` y `diagramas/despliegue.png`. Componentes por función, con un producto de ejemplo entre paréntesis. Sin RAG (posible extensión).
+
+**Petición normal.** El usuario abre HTTPS contra el balanceador, que termina TLS. El gateway revisa identidad, cuotas y que la entrada no pase de 8.192 tokens. El router busca una réplica con espacio en su presupuesto de tokens y la manda allí. El motor la mete en el lote continuo, procesa la entrada y devuelve la respuesta palabra a palabra. Las métricas guardan tiempos y errores, no el texto.
+
+**Sobrecarga.** Si ninguna réplica tiene espacio, la petición espera en una fila corta (máximo 1 s; caben 1,3 s en el presupuesto del TTFT). Pasado ese tiempo se responde "intenta en un momento" (429 o 503 con Retry-After). Fila máxima: ~21 peticiones en todo el servicio. Límites por usuario: 3 a la vez y 20 por minuto, así que un usuario solo puede ocupar el 1,6 % del pico. Si el usuario cierra la conexión, se cancela su generación para liberar memoria. Un solo reintento, y solo si no se envió nada. No hay tráfico por lotes en el escenario base; si lo hubiera, iría con menor prioridad.
+
+**Falla de un nodo.** El router deja de recibir latidos de sus 2 réplicas y las saca del reparto. Las peticiones que estaban a medias se pierden: el usuario ve un error y puede reintentar (no prometemos continuidad de respuestas parciales). Quedan 16 réplicas con 22,4 peticiones/s de capacidad admitida, por encima del pico de 20,83.
+
+**Paralelismo.** Datos: 18 réplicas independientes. Tensorial: 4 GPUs dentro del mismo servidor, por NVLink. No se usa paralelismo de tubería ni de expertos (el modelo es denso y cabe en 4 GPUs).
+
+**Lotes y caché.** Lotes continuos para aprovechar la GPU sin hacer esperar a nadie. Caché de prefijos solo dentro del mismo cliente (por ejemplo, las instrucciones de sistema), nunca entre usuarios, y sin suponer aciertos del 100 %. El KV cache de una conversación no es un caché de respuestas: no se reutilizan respuestas completas.
+
+**Admisión por memoria.** Al admitir se reservan entrada + salida máxima (5.000 tokens en el perfil promedio). Así caben ~45 peticiones por réplica, más que las ~26 que habría tras perder un nodo.
+
+**Escalado.** El límite es físico: 18 réplicas. Todas quedan cargadas y calientes; no se apagan en horas valle porque cargar 141 GB de pesos toma tiempo (se calcula en el paso 6). Para crecer hay que comprar nodos, y con ellos energía y refrigeración: escalar contenedores no crea GPUs. Indicadores para ampliar: uso sostenido por encima del 70 %, rechazos por fila llena o TTFT p95 acercándose a 2 s.
+
+**Operación y seguridad.** Despliegues graduales por réplica (una primero, luego el resto) con vuelta atrás. Registro de modelos con versión y huella de los pesos. Secretos en un gestor, nunca en el código. Cifrado en tránsito y en reposo. Aislamiento entre clientes en cuotas, caché y registros. Registros sin contenido de conversaciones por defecto, con retención corta y borrado a pedido. Las instrucciones maliciosas dentro de documentos se tratan como texto del usuario, no como órdenes; el modelo no ejecuta herramientas en el escenario base.

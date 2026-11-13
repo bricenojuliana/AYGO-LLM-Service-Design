@@ -117,6 +117,19 @@ INPUTS = [
      "Hay que verificarlo con el motor real; con 2 GPUs podría ser menor"),
     ("PET_EJEMPLO", "Peticiones simultáneas del ejemplo del enunciado", 40, "peticiones", "0",
      SRC.format("7.4"), "Documentado", "Para comparar con el ejemplo"),
+    ("Sobrecarga y límites", None),
+    ("RED_IDA_VUELTA", "Viaje de red de ida y vuelta hasta el usuario", 0.2, "s", "0.00",
+     "Estimación propia", "Supuesto", "Depende de la ubicación (paso 7)"),
+    ("PREFILL_EST", "Tiempo de procesar la entrada (4.000 tokens) en una réplica cargada", 0.5, "s", "0.00",
+     "Estimación propia", "Supuesto", "El mínimo teórico está en la hoja Sobrecarga"),
+    ("ESPERA_FILA_MAX", "Espera máxima en la fila antes de rechazar", 1, "s", "0.0",
+     "Decisión de Juliana", "Documentado", "Debe caber en el presupuesto del TTFT"),
+    ("LIM_CONC_USUARIO", "Peticiones simultáneas por usuario", 3, "peticiones", "0",
+     "Decisión de Juliana", "Supuesto", "Regla contra abuso; no cambia el dimensionamiento"),
+    ("LIM_MIN_USUARIO", "Peticiones por minuto por usuario", 20, "peticiones/min", "0",
+     "Decisión de Juliana", "Supuesto", "Regla contra abuso"),
+    ("REINTENTOS_MAX", "Reintentos automáticos por petición", 1, "reintentos", "0",
+     "Decisión de Juliana", "Supuesto", "Solo si aún no se envió ninguna palabra al usuario"),
     ("Presupuesto (USD, valores hipotéticos)", None),
     ("CAPEX_MAX", "CAPEX máximo", 8_000_000, "USD", "#,##0",
      SRC.format("4.5"), "Documentado", ""),
@@ -248,6 +261,16 @@ LOG = [
     ("Dominio de falla cubierto", "Un nodo; no un rack completo",
      "Inventario: tabla de fallas", "Baja", "Calculado"),
     ("Nodos por rack", "3", "Ejemplo del enunciado §12.2", "Se revisa con energía en el paso 7", "Supuesto"),
+    ("Componentes de la arquitectura", "Por función, con un producto de ejemplo entre paréntesis",
+     "Decisión de Juliana", "Baja", "Documentado"),
+    ("RAG", "No se incluye; queda como posible extensión", "Decisión de Juliana; §4.1 lo deja opcional", "Baja",
+     "Documentado"),
+    ("Espera máxima en la fila", '=ESPERA_FILA_MAX&" s (caben "&ROUND(ESPERA_DISPONIBLE,2)&" s)"',
+     "Sobrecarga: TTFT − red − procesar la entrada", "Media: red y prefill son estimaciones", "Calculado"),
+    ("Red y procesamiento de la entrada", '=RED_IDA_VUELTA&" s de red, "&PREFILL_EST&" s de entrada"',
+     "Estimación propia", "Alta: se revisa con la ubicación y con una medición", "Supuesto"),
+    ("Límites por usuario", '=LIM_CONC_USUARIO&" a la vez, "&LIM_MIN_USUARIO&" por minuto, "&REINTENTOS_MAX&" reintento"',
+     "Decisión de Juliana", "Baja: no cambian el dimensionamiento", "Supuesto"),
 ]
 
 
@@ -841,6 +864,62 @@ def build_inventory(wb):
     ws.freeze_panes = "A5"
 
 
+OVERLOAD = [
+    ("Presupuesto de tiempo para la primera palabra (TTFT)", None),
+    ("PREFILL_MIN", "Mínimo teórico para procesar la entrada", "=TOK_ENTRADA*FLOP_TOKEN/(FLOPS_PICO*1E12)", "s",
+     "0.00", "Con toda la réplica para una sola petición; en la práctica comparte con otras"),
+    ("ESPERA_DISPONIBLE", "Tiempo que queda para esperar en la fila", "=SLO_TTFT-RED_IDA_VUELTA-PREFILL_EST", "s",
+     "0.00", "TTFT prometido − red − procesar la entrada"),
+    ("CABE_ESPERA", "¿La espera máxima elegida cabe en ese tiempo?", '=IF(ESPERA_FILA_MAX<=ESPERA_DISPONIBLE,"Sí","No")',
+     "-", "@", "Si no cabe, la fila dejaría pasar peticiones que igual incumplen"),
+    ("MARGEN_ESPERA", "Margen que sobra", "=ESPERA_DISPONIBLE-ESPERA_FILA_MAX", "s", "0.00", ""),
+    ("Tamaño de la fila", None),
+    ("FILA_TOTAL", "Fila máxima en todo el servicio", "=ROUNDUP(RPS_PICO*ESPERA_FILA_MAX,0)", "peticiones", "0",
+     "Peticiones que llegan en el pico durante la espera máxima"),
+    ("FILA_REPL", "Fila máxima por réplica", "=ROUNDUP(FILA_TOTAL/REPL_TOTAL,0)", "peticiones", "0",
+     "Si la fila es por réplica en lugar de central"),
+    ("Control de admisión por memoria", None),
+    ("TOK_PET_RESERVA", "Tokens que se reservan al admitir una petición", "=TOK_ENTRADA+SALIDA_MAX", "tokens", "#,##0",
+     "Entrada real + salida máxima permitida, para no quedarse sin memoria a mitad de la respuesta"),
+    ("PET_ADMITIDAS_REPL", "Peticiones promedio que se pueden admitir por réplica",
+     "=INT(TOK_KV_MAX_BF16/TOK_PET_RESERVA)", "peticiones", "0",
+     "Presupuesto de tokens del KV cache ÷ reserva por petición"),
+    ("CABE_ADMISION", "¿Alcanza para la carga tras perder un nodo?",
+     '=IF(PET_ADMITIDAS_REPL>=CONC_REPL_FALLA,"Sí","No")', "-", "@", "Compara con la hoja Inventario"),
+    ("Límites por usuario", None),
+    ("PICO_USUARIO", "Tasa máxima de un usuario", "=LIM_MIN_USUARIO/60", "peticiones/s", "0.00", ""),
+    ("PESO_USUARIO", "Parte del pico que podría ocupar un solo usuario", "=PICO_USUARIO/RPS_PICO", "%", "0.0%",
+     "Un abusador aislado no puede saturar el servicio"),
+    ("TOK_USUARIO", "Tokens de KV que puede ocupar un usuario a la vez", "=LIM_CONC_USUARIO*CONTEXTO_MAX", "tokens",
+     "#,##0", "Peor caso: todas sus peticiones con la ventana completa"),
+]
+
+
+def build_overload(wb):
+    ws = wb.create_sheet("Sobrecarga")
+    title(ws, "Sobrecarga, fila y límites",
+          "Qué hace el servicio cuando llegan más peticiones de las que puede atender a tiempo.")
+    headers = ["Nombre", "Concepto", "Valor", "Unidad", "Cómo se obtiene"]
+    ncols = len(headers)
+    ws.append([])
+    ws.append(headers)
+    style_header(ws, ws.max_row, ncols)
+    for item in OVERLOAD:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, unit, note])
+        r = ws.max_row
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key, "Sobrecarga", "C", r)
+    for col, width in zip("ABCDE", [20, 52, 14, 14, 70]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -875,6 +954,7 @@ def main():
     build_memory(wb)
     build_performance(wb)
     build_inventory(wb)
+    build_overload(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)
