@@ -11,3 +11,15 @@ Lo que debe ir en cada sección del Word. Se completa paso a paso; el texto fina
 - Escenario ×2: 41,67/s en el pico, ~833 peticiones simultáneas.
 - Hallazgo para destacar: duplicar la entrada promedio (8.000) no cabe con 500 de salida en la ventana de 8.192. Ese escenario del §14.4 obliga a ampliar la ventana o a recortar contexto, y hay que decirlo.
 - SLOs: copiar la tabla del §4.3 y explicar que se miden desde el cliente (red + cola + proceso), y que disponibilidad y latencia son indicadores distintos.
+
+## 4. Modelo y memoria
+
+- Se comparan dos alternativas del mismo modelo: Llama 3.1 70B Instruct en BF16 (referencia) y en FP8 (RedHat). GPU: H100 de 80 GB.
+- Parámetros calculados desde config.json: 70.550 millones. Coincide con los "71B" de Hugging Face.
+- Pesos: 141,1 GB en BF16 y 72,7 GB en FP8. En FP8 los embeddings y lm_head siguen en 16 bits.
+- KV cache: 0,33 MB por token, 1,47 GB por petición promedio y 2,68 GB con la ventana completa.
+- BF16 en 4×H100: caben 50 peticiones promedio o 27 en el peor caso. El ejemplo del enunciado con 40 peticiones de 8.192 tokens no cabe.
+- FP8 en 4×H100: caben 97 promedio o 53 en el peor caso. FP8 en 2×H100 deja solo ~15 GB para KV (10 peticiones), muy justo.
+- Mensaje clave: caber en memoria no es atender a tiempo. Solo por memoria harían falta 9 réplicas BF16 para el KV del pico; el número real sale de rendimiento (pasos 3 y 4).
+- Riesgo grande de FP8: su ficha deja fuera de alcance los idiomas distintos al inglés. La calidad en español queda pendiente de evaluar y no se puede afirmar que llegue al 90 %.
+- La política de admisión debe limitar tokens en KV, no solo número de peticiones.

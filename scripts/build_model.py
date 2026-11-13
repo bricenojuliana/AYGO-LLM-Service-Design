@@ -25,6 +25,7 @@ BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 WRAP = Alignment(wrap_text=True, vertical="top")
 
 SRC = "Enunciado §{}"
+CFG = "config.json de Meta-Llama-3.1-70B-Instruct (espejo NousResearch, HF)"
 
 # ---------------------------------------------------------------- Entradas
 # (name, label, value, unit, number_format, source, classification, note)
@@ -70,6 +71,29 @@ INPUTS = [
      SRC.format("4.4"), "Documentado", "Referencia: Llama 3.1 70B Instruct BF16"),
     ("TAREAS_EVAL", "Tareas de evaluación en español", 100, "tareas", "0",
      SRC.format("4.4"), "Documentado", "No se entregó el conjunto: queda como plan de evaluación"),
+    ("Modelo: Llama 3.1 70B Instruct (config.json)", None),
+    ("CAPAS", "Capas (num_hidden_layers)", 80, "capas", "0",
+     CFG, "Documentado", "Cotejar con el artefacto exacto que se use"),
+    ("ATT_HEADS", "Cabezas de atención (num_attention_heads)", 64, "cabezas", "0",
+     CFG, "Documentado", ""),
+    ("KV_HEADS", "Cabezas KV (num_key_value_heads)", 8, "cabezas", "0",
+     CFG, "Documentado", "No es lo mismo que las cabezas de atención (GQA)"),
+    ("HIDDEN", "Dimensión oculta (hidden_size)", 8_192, "-", "#,##0",
+     CFG, "Documentado", ""),
+    ("INTERMEDIA", "Dimensión intermedia del MLP (intermediate_size)", 28_672, "-", "#,##0",
+     CFG, "Documentado", ""),
+    ("VOCAB", "Tamaño del vocabulario (vocab_size)", 128_256, "tokens", "#,##0",
+     CFG, "Documentado", ""),
+    ("Hardware y memoria", None),
+    ("GPU_MEM", "Memoria por GPU (H100 SXM)", 80, "GB", "0",
+     "NVIDIA, página de producto H100", "Documentado", "La guía de la DGX H100 da 640 GB para 8 GPUs"),
+    ("USO_UTIL", "Fracción de la memoria que se deja usar", 0.80, "%", "0%",
+     SRC.format("7.4") + " (ejemplo)", "Supuesto", "El resto queda como holgura"),
+    ("OVERHEAD_REPLICA", "Activaciones, motor y espacios de trabajo por réplica", 40, "GB", "0",
+     SRC.format("7.4") + " (ejemplo)", "Supuesto",
+     "Hay que verificarlo con el motor real; con 2 GPUs podría ser menor"),
+    ("PET_EJEMPLO", "Peticiones simultáneas del ejemplo del enunciado", 40, "peticiones", "0",
+     SRC.format("7.4"), "Documentado", "Para comparar con el ejemplo"),
     ("Presupuesto (USD, valores hipotéticos)", None),
     ("CAPEX_MAX", "CAPEX máximo", 8_000_000, "USD", "#,##0",
      SRC.format("4.5"), "Documentado", ""),
@@ -159,6 +183,26 @@ LOG = [
      "Demanda: tabla de sensibilidad de entrada",
      "Ninguna: el promedio ya no cabe en la ventana; el escenario exige cambiar la ventana o recortar",
      "Calculado"),
+    ("Alternativas de modelo comparadas", "Llama 3.1 70B Instruct en BF16 y en FP8",
+     "Decisión de Juliana (13-nov-2026); §7.1 pide al menos dos", "Baja", "Documentado"),
+    ("GPU para el cálculo", "H100 SXM 80 GB",
+     "Decisión de Juliana: la del ejemplo del enunciado; dato de la página de NVIDIA", "Baja", "Documentado"),
+    ("Arquitectura del modelo", "80 capas, 64 cabezas, 8 cabezas KV, hidden 8.192",
+     "config.json (espejo NousResearch)", "Cotejar con el artefacto exacto de Meta", "Documentado"),
+    ("Parámetros totales", '=ROUND(PARAM_TOTAL/1E9,2)&" miles de millones"',
+     "Calculado desde config.json (capas + embeddings)", "Baja: coincide con los 71B que muestra HF",
+     "Calculado"),
+    ("KV cache por token (16 bits)", '=ROUND(KV_TOKEN_BF16/1E6,3)&" MB/token"',
+     "2 × capas × cabezas KV × dimensión × 2 bytes", "Baja para esta arquitectura", "Calculado"),
+    ("Memoria de pesos", '=ROUND(MEM_PESOS_BF16,1)&" GB (BF16) / "&ROUND(MEM_PESOS_FP8_4,1)&" GB (FP8)"',
+     "Parámetros × bytes; en FP8 embeddings y lm_head siguen en 16 bits", "Faltan escalas y metadatos",
+     "Calculado"),
+    ("Calidad de FP8 en español", "Sin medir",
+     "La ficha de RedHat pone fuera de alcance los idiomas distintos al inglés",
+     "Alta: puede no llegar al 90 % de la referencia", "Supuesto"),
+    ("Holgura de memoria", "80 % utilizable", "Ejemplo del enunciado §7.4", "Media", "Supuesto"),
+    ("Activaciones y motor", "40 GB por réplica", "Ejemplo del enunciado §7.4",
+     "Alta: depende del motor y del tamaño de lote", "Supuesto"),
 ]
 
 
@@ -348,6 +392,189 @@ def build_demand(wb):
     ws.freeze_panes = "A5"
 
 
+ARCH = [
+    ("HEAD_DIM", "Dimensión por cabeza", "=HIDDEN/ATT_HEADS", "-", "0",
+     "hidden_size / cabezas de atención (el config no trae head_dim)"),
+    ("PARAM_CAPA", "Parámetros por capa",
+     "=2*HIDDEN*HIDDEN+2*HIDDEN*KV_HEADS*HEAD_DIM+3*HIDDEN*INTERMEDIA+2*HIDDEN", "parámetros", "#,##0",
+     "Atención (Q, O, K, V) + MLP (3 matrices) + 2 normalizaciones; Llama no usa sesgos"),
+    ("PARAM_CAPAS", "Parámetros de todas las capas", "=CAPAS*PARAM_CAPA", "parámetros", "#,##0",
+     "Son las capas lineales que FP8 cuantiza"),
+    ("PARAM_BORDE", "Embeddings, lm_head y norma final", "=2*VOCAB*HIDDEN+HIDDEN", "parámetros", "#,##0",
+     "La versión FP8 los deja en 16 bits"),
+    ("PARAM_TOTAL", "Parámetros totales", "=PARAM_CAPAS+PARAM_BORDE", "parámetros", "#,##0",
+     "Debe dar cerca de 70.600 millones (Hugging Face muestra \"71B\")"),
+]
+
+# Alternatives: (column header, gpus, bytes/param in layers, bytes/param in borders, KV bytes/element)
+ALTS = [
+    ("BF16 · 4×H100\n(referencia)", 4, 2, 2, 2),
+    ("FP8 · 4×H100", 4, 1, 2, 2),
+    ("FP8 · 2×H100", 2, 1, 2, 2),
+]
+
+# (key, label, template, unit, number_format, note). {c} = column, {KEY} = row of another item.
+# Keys starting with "in_" are per-alternative inputs.
+MEMORY = [
+    ("Configuración de cada alternativa (valores azules = elección)", None),
+    ("in_gpus", "GPUs por réplica", None, "GPUs", "0", "La réplica queda dentro de un solo nodo de 8 GPUs"),
+    ("in_bpc", "Bytes por parámetro en las capas", None, "bytes", "0", "BF16 = 2, FP8 = 1"),
+    ("in_bpb", "Bytes por parámetro en embeddings y lm_head", None, "bytes", "0",
+     "La ficha FP8 dice que lm_head no se cuantiza"),
+    ("in_bkv", "Bytes por elemento del KV cache", None, "bytes", "0",
+     "La ficha FP8 no cuantiza el KV cache: se deja en 16 bits"),
+    ("Pesos", None),
+    ("MEM_PESOS", "Memoria de pesos", "=(PARAM_CAPAS*{c}{in_bpc}+PARAM_BORDE*{c}{in_bpb})/BYTES_GB", "GB", "0.0",
+     "Sin contar escalas ni metadatos, que son pequeños"),
+    ("KV cache", None),
+    ("KV_TOKEN", "KV cache por token", "=2*CAPAS*KV_HEADS*HEAD_DIM*{c}{in_bkv}", "bytes", "#,##0",
+     "2 (K y V) × capas × cabezas KV × dimensión × bytes"),
+    ("KV_PET_PROM", "KV por petición promedio", "={c}{KV_TOKEN}*TOK_POR_PET/BYTES_GB", "GB", "0.00",
+     "Con los tokens acumulados de la hoja Demanda (4.500)"),
+    ("KV_PET_MAX", "KV por petición en el peor caso permitido", "={c}{KV_TOKEN}*CONTEXTO_MAX/BYTES_GB", "GB",
+     "0.00", "Ventana completa de 8.192 tokens"),
+    ("Presupuesto por réplica", None),
+    ("MEM_NOMINAL", "Memoria nominal", "={c}{in_gpus}*GPU_MEM", "GB", "0", "GPUs × memoria por GPU"),
+    ("MEM_UTIL", "Memoria utilizable", "={c}{MEM_NOMINAL}*USO_UTIL", "GB", "0.0", "Deja la holgura definida en Entradas"),
+    ("MEM_OVERHEAD", "Activaciones, motor y espacios de trabajo", "=OVERHEAD_REPLICA", "GB", "0.0", "Supuesto"),
+    ("KV_DISP", "Memoria que queda para KV cache", "={c}{MEM_UTIL}-{c}{MEM_PESOS}-{c}{MEM_OVERHEAD}", "GB",
+     "0.0", "Si es negativa, el modelo no cabe con esta holgura"),
+    ("TOK_KV_MAX", "Tokens que caben en el KV cache", "=MAX(0,{c}{KV_DISP})*BYTES_GB/{c}{KV_TOKEN}", "tokens",
+     "#,##0", "Es el límite que debe usar la política de admisión"),
+    ("PET_MAX_PROM", "Peticiones promedio simultáneas que caben",
+     "=INT(MAX(0,{c}{KV_DISP})/{c}{KV_PET_PROM})", "peticiones", "0", "Todas de 4.500 tokens"),
+    ("PET_MAX_PEOR", "Peticiones simultáneas que caben en el peor caso",
+     "=INT(MAX(0,{c}{KV_DISP})/{c}{KV_PET_MAX})", "peticiones", "0", "Todas usando la ventana completa"),
+    ("Por GPU", None),
+    ("PESOS_GPU", "Pesos por GPU", "={c}{MEM_PESOS}/{c}{in_gpus}", "GB", "0.0",
+     "Reparto ideal; en la práctica hay desbalances y partes replicadas"),
+    ("OCUP_GPU", "Ocupación por GPU con el KV lleno", "=({c}{MEM_PESOS}+{c}{MEM_OVERHEAD}+MAX(0,{c}{KV_DISP}))/{c}{in_gpus}",
+     "GB", "0.0", "No debe pasar de memoria por GPU × fracción utilizable"),
+    ("Ejemplo del enunciado §7.4 (PET_EJEMPLO peticiones)", None),
+    ("EJ_TOTAL_PROM", "Memoria total con peticiones de 4.500 tokens",
+     "={c}{MEM_PESOS}+{c}{MEM_OVERHEAD}+PET_EJEMPLO*{c}{KV_PET_PROM}", "GB", "0.0", "El enunciado da ~239 GB en BF16"),
+    ("EJ_CABE_PROM", "¿Cabe en la memoria utilizable?", '=IF({c}{EJ_TOTAL_PROM}<={c}{MEM_UTIL},"Sí","No")', "-", "@", ""),
+    ("EJ_TOTAL_PEOR", "Memoria total con peticiones de 8.192 tokens",
+     "={c}{MEM_PESOS}+{c}{MEM_OVERHEAD}+PET_EJEMPLO*{c}{KV_PET_MAX}", "GB", "0.0", "El enunciado da ~287 GB en BF16"),
+    ("EJ_CABE_PEOR", "¿Cabe en la memoria utilizable?", '=IF({c}{EJ_TOTAL_PEOR}<={c}{MEM_UTIL},"Sí","No")', "-", "@", ""),
+    ("Relación con la demanda (solo memoria)", None),
+    ("KV_PICO_TOTAL", "KV cache de todas las peticiones del pico (cota)",
+     "=TOK_VIVOS_PICO*{c}{KV_TOKEN}/BYTES_GB", "GB", "#,##0", "Tokens vivos de la hoja Demanda × KV por token"),
+    ("REPL_MIN_MEM", "Réplicas mínimas solo para que quepa el KV del pico",
+     "=IF({c}{KV_DISP}>0,ROUNDUP({c}{KV_PICO_TOTAL}/{c}{KV_DISP},0),\"No cabe\")", "réplicas", "0",
+     "Caber no es lo mismo que atender a tiempo: el número final sale de los pasos 3 y 4"),
+    ("GPUS_MIN_MEM", "GPUs correspondientes", "=IF(ISNUMBER({c}{REPL_MIN_MEM}),{c}{REPL_MIN_MEM}*{c}{in_gpus},\"-\")",
+     "GPUs", "0", ""),
+]
+
+COMPARISON = [
+    ("Identificador", "meta-llama/Llama-3.1-70B-Instruct", "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8"),
+    ("Versión / revisión", "Lanzado el 23-jul-2024; revisión exacta por congelar",
+     "Revisión exacta por congelar"),
+    ("Parámetros", "~70.600 millones, densos (no es MoE)", "Los mismos; cambia cómo se guardan"),
+    ("Licencia", "Llama 3.1 Community License", "Llama 3.1 (hereda la del original)"),
+    ("Español", "Soportado oficialmente. MMLU multilingüe en español: 80,05",
+     "Sin evaluar: la ficha pone otros idiomas distintos al inglés fuera de alcance"),
+    ("Calidad publicada", "MGSM 86,9; IFEval 87,5 (ficha de Meta)",
+     "Recupera 99,88 % del promedio OpenLLM v1, solo en inglés"),
+    ("Precisión de pesos / KV", "BF16 / BF16", "FP8 por tensor en capas lineales; KV en 16 bits"),
+    ("Contexto soportado", "128k tokens (el servicio usa 8.192)", "Igual que el original"),
+    ("Motor de inferencia", "vLLM (versión por fijar)", "vLLM con formato compressed-tensors; requiere FP8 en hardware (H100 lo tiene)"),
+    ("Hardware mínimo de referencia", "4×H100 80 GB por réplica", "2×H100 80 GB por réplica"),
+    ("Riesgos", "Más GPUs por réplica, más costo y energía",
+     "Pérdida de calidad en español no medida; dependencia de un tercero (RedHat) para la cuantización"),
+]
+
+
+def build_memory(wb):
+    ws = wb.create_sheet("Modelo y memoria")
+    title(ws, "Modelo y memoria por réplica",
+          "Datos del modelo y de la GPU en Entradas. Una réplica es una copia completa del modelo que atiende peticiones.")
+    ncols = 2 + len(ALTS) + 2  # name, concept, alts..., unit, note
+    ucol, ncol = 3 + len(ALTS), 4 + len(ALTS)
+    alt_cols = [chr(ord("C") + i) for i in range(len(ALTS))]
+
+    # ---- Architecture block (single value column)
+    ws.append([])
+    ws.append(["Nombre", "Arquitectura (común a las alternativas)", "Valor", "", "", "Unidad", "Cómo se obtiene"])
+    style_header(ws, ws.max_row, ncols)
+    for key, label, formula, unit, fmt, note in ARCH:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=key)
+        ws.cell(row=r, column=2, value=label)
+        ws.cell(row=r, column=3, value=formula).number_format = fmt
+        ws.cell(row=r, column=ucol, value=unit)
+        ws.cell(row=r, column=ncol, value=note)
+        style_body(ws, r, ncols)
+        add_name(wb, key, "'Modelo y memoria'", "C", r)
+
+    # ---- Per-alternative block
+    ws.append([])
+    ws.append(["Nombre", "Concepto"] + [a[0] for a in ALTS] + ["Unidad", "Cómo se obtiene"])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 30
+
+    rows, r = {}, ws.max_row
+    for item in MEMORY:
+        r += 1
+        if item[1] is not None:
+            rows[item[0]] = r
+    inputs_idx = {"in_gpus": 1, "in_bpc": 2, "in_bpb": 3, "in_bkv": 4}
+
+    for item in MEMORY:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, tpl, unit, fmt, note = item
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value="" if key.startswith("in_") else key)
+        ws.cell(row=r, column=2, value=label)
+        for i, (alt, col) in enumerate(zip(ALTS, alt_cols)):
+            cell = ws.cell(row=r, column=3 + i)
+            if key in inputs_idx:
+                cell.value = alt[inputs_idx[key]]
+                cell.font = INPUT_FONT
+            else:
+                cell.value = tpl.format(c=col, **rows)
+            cell.number_format = fmt
+        ws.cell(row=r, column=ucol, value=unit)
+        ws.cell(row=r, column=ncol, value=note)
+        style_body(ws, r, ncols)
+        if not key.startswith("in_"):
+            # Name the reference (first) alternative; others are referenced by cell.
+            add_name(wb, key + "_BF16", "'Modelo y memoria'", "C", r)
+            add_name(wb, key + "_FP8_4", "'Modelo y memoria'", "D", r)
+            add_name(wb, key + "_FP8_2", "'Modelo y memoria'", "E", r)
+
+    # ---- Qualitative comparison (§7.1)
+    ws.append([])
+    ws.append(["Comparación de alternativas (§7.1)"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Criterio", "Llama 3.1 70B Instruct BF16", "", "Llama 3.1 70B Instruct FP8", "", ""])
+    r = ws.max_row
+    ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+    ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+    style_header(ws, r, ncols)
+    for crit, a, b in COMPARISON:
+        ws.append(["", crit, a, "", b, "", ""])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+        style_body(ws, r, ncols)
+        ws.row_dimensions[r].height = 30
+
+    ws.append([])
+    ws.append(["", "Fuentes: config.json (espejo NousResearch en Hugging Face), ficha del modelo Llama 3.1 de Meta, "
+               "ficha de RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8 y página de producto H100 de NVIDIA. "
+               "Consultadas el 13-nov-2026."])
+    ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+
+    for col, width in zip("ABCDEFG", [16, 46, 20, 20, 20, 12, 58]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "C5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -379,6 +606,7 @@ def main():
     wb = Workbook()
     build_inputs(wb)
     build_demand(wb)
+    build_memory(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)
