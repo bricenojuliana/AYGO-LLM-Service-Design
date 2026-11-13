@@ -23,3 +23,14 @@ Lo que debe ir en cada sección del Word. Se completa paso a paso; el texto fina
 - Mensaje clave: caber en memoria no es atender a tiempo. Solo por memoria harían falta 9 réplicas BF16 para el KV del pico; el número real sale de rendimiento (pasos 3 y 4).
 - Riesgo grande de FP8: su ficha deja fuera de alcance los idiomas distintos al inglés. La calidad en español queda pendiente de evaluar y no se puede afirmar que llegue al 90 %.
 - La política de admisión debe limitar tokens en KV, no solo número de peticiones.
+
+## 5. Evidencia de capacidad
+
+- No hay medición propia. Se usa el dato sintético del §8.4: 2 peticiones/s por réplica de 4×H100 (8.000 tokens/s de entrada y 1.000 de salida a la vez). Siempre decir "supuesto", nunca "medimos".
+- Prueba de cómputo: ese punto pide ~1.270 TFLOPS de ~3.960 densos, un 32 %. Es físicamente posible.
+- Prueba de memoria: con 40 ms por token hay ~40 peticiones generando a la vez, y caben 50 en el KV. El paso mínimo de generación toma ~14,7 ms, por debajo de 40 ms.
+- Coherencia: 2 peticiones/s × 20 s = 40 peticiones en la réplica, el mismo tiempo supuesto en la hoja Demanda.
+- MLPerf v5.0 tiene una prueba interactiva de Llama 2 70B con 40 ms por token: sirve para decir que la meta es realista, no para sacar cifras.
+- Sensibilidad: con 30 % menos de rendimiento, 1,4 peticiones/s por réplica.
+- FP8 queda como variante a futuro: podría ahorrar GPUs, pero falta medir velocidad y calidad en español.
+- Incluir el plan de validación (procedimiento del §8.2) tal como está en la hoja Rendimiento.

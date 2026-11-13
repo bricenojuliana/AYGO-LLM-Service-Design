@@ -87,6 +87,21 @@ INPUTS = [
     ("Hardware y memoria", None),
     ("GPU_MEM", "Memoria por GPU (H100 SXM)", 80, "GB", "0",
      "NVIDIA, página de producto H100", "Documentado", "La guía de la DGX H100 da 640 GB para 8 GPUs"),
+    ("H100_BW", "Ancho de banda de memoria por GPU (H100 SXM)", 3.35, "TB/s", "0.00",
+     "NVIDIA, página de producto H100", "Documentado", ""),
+    ("H100_BF16_SPARSE", "Cómputo BF16 por GPU, con dispersión (sparsity)", 1_979, "TFLOPS", "#,##0",
+     "NVIDIA, página de producto H100", "Documentado", "La página marca este valor \"With sparsity\""),
+    ("FACTOR_DISPERSION", "Factor de la dispersión 2:4 sobre el valor denso", 2, "x", "0",
+     "Convención de NVIDIA para sparsity 2:4", "Supuesto",
+     "La página no publica el valor denso; un modelo denso como Llama no aprovecha la dispersión"),
+    ("Rendimiento (dato sintético del enunciado)", None),
+    ("GPUS_REPLICA", "GPUs por réplica del diseño", 4, "GPUs", "0",
+     SRC.format("8.4"), "Documentado", "Modelo BF16; la versión FP8 queda como variante a futuro"),
+    ("CAP_REPLICA", "Peticiones por segundo que atiende una réplica cumpliendo los SLOs", 2, "peticiones/s", "0.00",
+     SRC.format("8.4") + " (sintético)", "Supuesto",
+     "No es un benchmark real; perfil 4.000 entrada / 500 salida"),
+    ("CAIDA_SENS", "Caída de rendimiento para la sensibilidad", 0.30, "%", "0%",
+     SRC.format("14.4"), "Documentado", ""),
     ("USO_UTIL", "Fracción de la memoria que se deja usar", 0.80, "%", "0%",
      SRC.format("7.4") + " (ejemplo)", "Supuesto", "El resto queda como holgura"),
     ("OVERHEAD_REPLICA", "Activaciones, motor y espacios de trabajo por réplica", 40, "GB", "0",
@@ -203,6 +218,20 @@ LOG = [
     ("Holgura de memoria", "80 % utilizable", "Ejemplo del enunciado §7.4", "Media", "Supuesto"),
     ("Activaciones y motor", "40 GB por réplica", "Ejemplo del enunciado §7.4",
      "Alta: depende del motor y del tamaño de lote", "Supuesto"),
+    ("Fuente del rendimiento", "Dato sintético del enunciado + pruebas de orden de magnitud",
+     "Decisión de Juliana (opción A); MLPerf no tiene un caso comparable", "Alta", "Documentado"),
+    ("Modelo del diseño", "Llama 3.1 70B BF16; FP8 queda como variante a futuro",
+     "Decisión de Juliana: no hay datos de velocidad ni de calidad en español para FP8", "Baja", "Documentado"),
+    ("Capacidad por réplica", '=CAP_REPLICA&" peticiones/s con 4×H100"',
+     "Enunciado §8.4, explícitamente sintético", "Alta: falta medirla", "Supuesto"),
+    ("Cómputo usado en el punto de operación", '=ROUND(USO_COMPUTO*100,0)&" % del máximo denso"',
+     "Rendimiento: tokens/s × 2 × parámetros ÷ cómputo de 4 H100", "Media: depende del valor denso supuesto",
+     "Calculado"),
+    ("Tiempo mínimo por paso de generación", '=ROUND(T_PASO_MIN,1)&" ms (límite: 40 ms)"',
+     "Rendimiento: (pesos + KV) ÷ ancho de banda", "Media: es un mínimo teórico", "Calculado"),
+    ("Cómputo BF16 de la H100", "1.979 TFLOPS con dispersión; ~990 densos",
+     "NVIDIA, página H100 (valor con sparsity) ÷ 2", "Media: NVIDIA no publica el denso en esa página",
+     "Supuesto"),
 ]
 
 
@@ -408,7 +437,7 @@ ARCH = [
 
 # Alternatives: (column header, gpus, bytes/param in layers, bytes/param in borders, KV bytes/element)
 ALTS = [
-    ("BF16 · 4×H100\n(referencia)", 4, 2, 2, 2),
+    ("BF16 · 4×H100\n(diseño)", "=GPUS_REPLICA", 2, 2, 2),
     ("FP8 · 4×H100", 4, 1, 2, 2),
     ("FP8 · 2×H100", 2, 1, 2, 2),
 ]
@@ -534,7 +563,8 @@ def build_memory(wb):
             cell = ws.cell(row=r, column=3 + i)
             if key in inputs_idx:
                 cell.value = alt[inputs_idx[key]]
-                cell.font = INPUT_FONT
+                if not str(cell.value).startswith("="):
+                    cell.font = INPUT_FONT
             else:
                 cell.value = tpl.format(c=col, **rows)
             cell.number_format = fmt
@@ -575,6 +605,99 @@ def build_memory(wb):
     ws.freeze_panes = "C5"
 
 
+# (key, label, formula, unit, number_format, note); single value column.
+PERFORMANCE = [
+    ("Punto de operación por réplica (dato sintético §8.4)", None),
+    ("CAP_REPLICA_R", "Peticiones por segundo cumpliendo los SLOs", "=CAP_REPLICA", "peticiones/s", "0.00",
+     "Supuesto: el enunciado lo da solo para practicar"),
+    ("TOKS_ENT_REPLICA", "Tokens de entrada por segundo", "=CAP_REPLICA*TOK_ENTRADA", "tokens/s", "#,##0",
+     "Es el mismo punto de operación, no un máximo aparte de prefill"),
+    ("TOKS_SAL_REPLICA", "Tokens de salida por segundo", "=CAP_REPLICA*TOK_SALIDA", "tokens/s", "#,##0",
+     "Tampoco es un máximo aparte de decode: los dos ocurren a la vez"),
+    ("CAP_GPU", "Peticiones por segundo por GPU", "=CAP_REPLICA/GPUS_REPLICA", "peticiones/s", "0.00", ""),
+    ("Prueba de orden de magnitud: cómputo", None),
+    ("FLOP_TOKEN", "Operaciones por token (aprox.)", "=2*PARAM_TOTAL", "FLOP/token", "#,##0",
+     "Regla de 2 operaciones por parámetro; deja fuera la atención, que con 4.500 tokens suma poco"),
+    ("FLOPS_USADOS", "Cómputo que exige el punto de operación",
+     "=(TOKS_ENT_REPLICA+TOKS_SAL_REPLICA)*FLOP_TOKEN/1E12", "TFLOPS", "#,##0", "Tokens/s × operaciones por token"),
+    ("FLOPS_PICO", "Cómputo máximo de la réplica (denso)",
+     "=GPUS_REPLICA*H100_BF16_SPARSE/FACTOR_DISPERSION", "TFLOPS", "#,##0", "GPUs × valor de NVIDIA ÷ 2"),
+    ("USO_COMPUTO", "Fracción del cómputo que se usaría", "=FLOPS_USADOS/FLOPS_PICO", "%", "0%",
+     "Por encima de 100 % sería imposible; muy cerca de 100 % sería sospechoso"),
+    ("Prueba de orden de magnitud: memoria en la generación", None),
+    ("SEC_DECODE", "Peticiones generando a la vez en la réplica",
+     "=TOKS_SAL_REPLICA*SLO_TPOT/1000", "peticiones", "0",
+     "Ley de Little con 40 ms por token: tokens/s × tiempo por token"),
+    ("CABE_DECODE", "¿Caben en el KV cache de la réplica?",
+     '=IF(SEC_DECODE<=PET_MAX_PROM_BF16,"Sí","No")', "-", "@", "Compara con la hoja Modelo y memoria"),
+    ("KV_LEIDO", "KV cache que se lee en cada paso de generación",
+     "=SEC_DECODE*(TOK_ENTRADA+TOK_SALIDA/2)*KV_TOKEN_BF16/BYTES_GB", "GB", "0.0",
+     "Cada petición va en promedio a mitad de su respuesta"),
+    ("T_PASO_MIN", "Tiempo mínimo de un paso de generación",
+     "=(MEM_PESOS_BF16+KV_LEIDO)/(GPUS_REPLICA*H100_BW*1000)*1000", "ms", "0.0",
+     "Pesos + KV leídos al ancho de banda máximo; el real es mayor"),
+    ("CUMPLE_TPOT", "¿Queda por debajo de 40 ms por token?", '=IF(T_PASO_MIN<SLO_TPOT,"Sí","No")', "-", "@",
+     "Si no cumpliera ni en teoría, el dato sintético sería imposible"),
+    ("Sensibilidad (§14.4)", None),
+    ("CAP_REPLICA_BAJA", "Peticiones por segundo si la réplica rinde menos", "=CAP_REPLICA*(1-CAIDA_SENS)",
+     "peticiones/s", "0.00", "Su efecto en réplicas y costos se ve en los pasos 4 y 9"),
+]
+
+VALIDATION = [
+    "Qué es este dato: un supuesto del enunciado (§8.4), no una medición ni un benchmark de NVIDIA, vLLM o Meta. "
+    "No se puede escribir \"medimos\" ni \"demostramos\".",
+    "Qué muestran las pruebas de arriba: que 2 peticiones/s no rompe la física de la H100. No prueban que se alcance.",
+    "Cómo se validaría: fijar modelo y revisión, vLLM y su versión, 4×H100 con paralelismo tensorial 4 y el perfil "
+    "4.000/500; calentar; subir la tasa de llegada en lazo abierto hasta que se rompa algún SLO; repetir 3 veces.",
+    "Qué registrar en cada prueba: TTFT, tiempo por token y tiempo total en p95, peticiones completadas, rechazadas y "
+    "fallidas, estado del caché de prefijos y consumo eléctrico.",
+    "Después: repetir con la mezcla de peticiones cortas y largas, con arranque en frío y con la pérdida de un nodo.",
+    "Variante FP8: no hay datos de su velocidad ni de su calidad en español. Queda como ahorro posible a futuro, "
+    "condicionado a medir ambas cosas.",
+    "Referencia externa: MLPerf Inference v5.0 tiene una prueba interactiva de Llama 2 70B con TPOT p99 de 40 ms y "
+    "TTFT p99 de 450 ms. Muestra que el límite de 40 ms es una meta realista en la industria, pero usa otro modelo "
+    "y textos más cortos, así que sus cifras no se trasladan a este caso.",
+]
+
+
+def build_performance(wb):
+    ws = wb.create_sheet("Rendimiento")
+    title(ws, "Rendimiento por réplica",
+          "Diseño con Llama 3.1 70B BF16 en 4×H100. El dato de capacidad es sintético; las pruebas solo revisan "
+          "que sea físicamente posible.")
+    headers = ["Nombre", "Concepto", "Valor", "Unidad", "Cómo se obtiene"]
+    ncols = len(headers)
+    ws.append([])
+    ws.append(headers)
+    style_header(ws, ws.max_row, ncols)
+
+    for item in PERFORMANCE:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, unit, note])
+        r = ws.max_row
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key, "Rendimiento", "C", r)
+
+    ws.append([])
+    ws.append(["Límites del dato y plan de validación (§8)"])
+    style_section(ws, ws.max_row, ncols)
+    for text in VALIDATION:
+        ws.append(["", text])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
+        ws.cell(row=r, column=2).alignment = WRAP
+        ws.row_dimensions[r].height = 32
+
+    for col, width in zip("ABCDE", [20, 50, 16, 14, 70]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -607,6 +730,7 @@ def main():
     build_inputs(wb)
     build_demand(wb)
     build_memory(wb)
+    build_performance(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)

@@ -27,4 +27,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 0: project setup, inputs and decision log
 - [x] Step 1: demand (requests, tokens, concurrency, sensitivity, 2x stress)
 - [x] Step 2: model and memory (Llama 3.1 70B BF16 vs FP8 on H100)
-- [ ] Step 3: performance evidence
+- [x] Step 3: performance (synthetic 2 req/s per replica + order-of-magnitude checks)
+- [ ] Step 4: replicas, nodes and headroom
