@@ -9,7 +9,7 @@ The deliverables themselves are written in Spanish. This repo only holds them pl
 | Path | Content |
 |------|---------|
 | `modelo/modelo_calculo.xlsx` | Calculation model (inputs, decision log, and later demand, memory, inventory, power, costs, scenarios) |
-| `propuesta/` | Technical proposal (Word), added in later steps |
+| `propuesta/` | Technical proposal (Word), added in later steps; `notas_secciones.md` holds working notes per section |
 | `scripts/` | Python scripts that generate the Excel and Word files |
 
 ## Rebuilding the files
@@ -25,4 +25,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 ## Status
 
 - [x] Step 0: project setup, inputs and decision log
-- [ ] Step 1: demand
+- [x] Step 1: demand (requests, tokens, concurrency, sensitivity, 2x stress)
+- [ ] Step 2: model and memory
