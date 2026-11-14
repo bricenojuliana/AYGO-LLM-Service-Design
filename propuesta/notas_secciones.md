@@ -131,7 +131,7 @@ Hoja Resiliencia: matriz de 10 fallas, objetivos de recuperación y un ejercicio
 
 Hoja "Uso de IA": 10 consultas, 6 con errores, omisiones o simplificaciones (más de las 2 que pide el enunciado). Las más claras para la defensa:
 
-1. Error de la IA en el Excel: las tablas de sensibilidad se escribían encima del encabezado. Se descubrió al pedir ver el Excel abierto.
+1. Error de la IA en el Excel: las tablas de sensibilidad se escribían encima del encabezado. Juliana revisaba el Excel y pidió capturas para que la IA también lo viera; en ellas apareció el error.
 2. Error de la herramienta web: los resúmenes automáticos negaban datos que sí estaban en las páginas. Se usaron solo valores leídos literalmente.
 3. Error de la IA: "con 20 kW por rack caben 2 servidores", cuando 2 × 10,2 = 20,4 kW.
 4. Simplificación: el 99,88 % de calidad de FP8 era solo en inglés.

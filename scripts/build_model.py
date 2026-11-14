@@ -1838,7 +1838,7 @@ AI_LOG = [
      "Ninguna: coinciden", CONFIRM),
     (True, "Generar el Excel con tablas de sensibilidad",
      "Script que crea las hojas",
-     "Juliana pidió ver el Excel abierto; en la captura cada tabla mostraba una sola fila",
+     "Juliana revisó el archivo en Excel y pidió capturas para que la IA lo viera; en ellas cada tabla mostraba una sola fila",
      "Error de la IA: todas las filas se escribían encima del encabezado. Se corrigió el script y se volvió a revisar "
      "en imagen", CONFIRM),
     (False, "Datos de arquitectura de Llama 3.1 70B y memoria por petición",
