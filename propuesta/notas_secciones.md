@@ -126,3 +126,16 @@ Hoja Resiliencia: matriz de 10 fallas, objetivos de recuperación y un ejercicio
 - RTO/RPO: fallas de hardware → segundos, sin pérdida de datos (no se guardan conversaciones); versión mala → ~15 min; pesos desde fuera → ~19 min; datos de la aplicación → RPO de 1 h con copias cada hora; registros → hasta 24 h, sin copia externa.
 - Ensayos: apagar un nodo a propósito cada trimestre, restaurar una versión desde fuera cada semestre, restaurar datos cada mes en un entorno de prueba y un ejercicio de mesa anual de pérdida del sitio. Tener la copia no prueba que se pueda restaurar.
 - Crecer: demanda ×2 pide 16 nodos y ~234 kW, más que los 160 kW contratados. Hay que negociar potencia y enfriamiento con el proveedor con meses de anticipación.
+
+## Anexo: uso de IA (§16)
+
+Hoja "Uso de IA": 10 consultas, 6 con errores, omisiones o simplificaciones (más de las 2 que pide el enunciado). Las más claras para la defensa:
+
+1. Error de la IA en el Excel: las tablas de sensibilidad se escribían encima del encabezado. Se descubrió al pedir ver el Excel abierto.
+2. Error de la herramienta web: los resúmenes automáticos negaban datos que sí estaban en las páginas. Se usaron solo valores leídos literalmente.
+3. Error de la IA: "con 20 kW por rack caben 2 servidores", cuando 2 × 10,2 = 20,4 kW.
+4. Simplificación: el 99,88 % de calidad de FP8 era solo en inglés.
+5. Dato de memoria sin fuente: ~990 TFLOPS densos de la H100; NVIDIA solo publica la cifra con sparsity.
+6. Omisión: el calor declarado del DGX (11,3 kW) no coincide con los 10,2 kW.
+
+La columna de verificación humana debe reflejar lo que Juliana revisó por su cuenta antes de entregar.

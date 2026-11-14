@@ -1827,6 +1827,87 @@ def build_resilience(wb):
     ws.freeze_panes = "A5"
 
 
+AI_TOOL = "Claude Code (Claude Opus 5.5), con búsqueda y lectura web"
+CONFIRM = "Por confirmar: Juliana"
+
+# (is_error, question, result used, verification, correction, confirmation)
+AI_LOG = [
+    (False, "Convertir usuarios en peticiones, tokens y concurrencia (§6)",
+     "Fórmulas de la hoja Demanda",
+     "Se compararon con las cifras del enunciado: 300.000/día, 20,83/s, ~83.333 y ~10.417 tokens/s, ~417 en curso",
+     "Ninguna: coinciden", CONFIRM),
+    (True, "Generar el Excel con tablas de sensibilidad",
+     "Script que crea las hojas",
+     "Juliana pidió ver el Excel abierto; en la captura cada tabla mostraba una sola fila",
+     "Error de la IA: todas las filas se escribían encima del encabezado. Se corrigió el script y se volvió a revisar "
+     "en imagen", CONFIRM),
+    (False, "Datos de arquitectura de Llama 3.1 70B y memoria por petición",
+     "80 capas, 8 cabezas KV, dimensión 128; 70.550 millones de parámetros; 1,47 GB por petición",
+     "config.json leído directamente; el KV por petición coincide con el §7.3 y los parámetros con los \"71B\" de "
+     "Hugging Face", "Ninguna", CONFIRM),
+    (True, "Resumir páginas web (ficha de Llama 3.3, CBRE, WonderNetwork)",
+     "Datos de licencia, contexto, precios y pings",
+     "Se cruzó el resumen automático con el texto literal de cada página",
+     "Error de la herramienta: los resúmenes decían \"no indicado\" o \"no incluido\" para datos que sí estaban "
+     "(licencia y contexto de Llama 3.3, precios de São Paulo). Se usaron solo valores leídos literalmente", CONFIRM),
+    (True, "Calidad de la versión FP8 del modelo",
+     "La IA presentó FP8 con 99,88 % de la calidad original",
+     "Se leyó la ficha completa: la cifra es solo en inglés y la ficha deja fuera otros idiomas",
+     "Simplificación corregida: FP8 queda como variante a futuro, con su calidad en español pendiente de medir",
+     CONFIRM),
+    (True, "Cómputo de la H100 para la prueba de orden de magnitud",
+     "La IA usó ~990 TFLOPS BF16 \"de memoria\"",
+     "La página de NVIDIA solo publica 1.979 TFLOPS con dispersión (sparsity)",
+     "Se registró el valor de la página y la división entre 2 como supuesto explícito", CONFIRM),
+    (True, "Racks si el proveedor da menos potencia",
+     "\"Con ~20 kW por rack caben 2 servidores\"",
+     "Revisión del resultado: daba 10 racks, no 6",
+     "Error de la IA: 2 × 10,2 kW = 20,4 kW no caben en 20 kW. Se cambió a racks de ~25 kW", CONFIRM),
+    (True, "Potencia del DGX H100",
+     "10,2 kW por servidor (dato del enunciado y de la guía de NVIDIA)",
+     "La misma guía declara 38.557 BTU/h, que son 11,3 kW",
+     "Omisión detectada: se agregó la revisión en la hoja Energía; el enfriamiento N+1 alcanza igual", CONFIRM),
+    (False, "Precio de la electricidad en México, Brasil y Chile",
+     "Fuentes con valores muy distintos para México (0,117 contra 0,199 USD/kWh)",
+     "Se revisó qué incluye cada cifra: una es tarifa industrial sin claridad de impuestos, otra es precio final",
+     "Se usó una sola fuente para las tres ciudades (GlobalPetrolPrices, con impuestos) para comparar parejo", CONFIRM),
+    (False, "Presupuesto de ejemplo del enunciado aplicado a colocation",
+     "Partidas de obra eléctrica, UPS, enfriamiento y edificio",
+     "Se contrastó con lo que incluye la renta de colocation",
+     "Se quitaron USD 1,2 M que se habrían pagado dos veces", CONFIRM),
+]
+
+
+def build_ai_log(wb):
+    ws = wb.create_sheet("Uso de IA")
+    title(ws, "Registro de uso de IA (§16)",
+          "Una respuesta convincente no es evidencia. Filas en naranja = errores, omisiones o simplificaciones de la IA.")
+    headers = ["#", "Herramienta", "Pregunta relevante", "Resultado usado", "Verificación humana",
+               "Corrección realizada", "Confirmación"]
+    ncols = len(headers)
+    ws.append([])
+    ws.append(headers)
+    style_header(ws, ws.max_row, ncols)
+    err_fill = PatternFill("solid", fgColor="FBE9DD")
+    for i, (is_err, q, res, ver, cor, conf) in enumerate(AI_LOG, start=1):
+        ws.append([i, AI_TOOL, q, res, ver, cor, conf])
+        r = ws.max_row
+        style_body(ws, r, ncols)
+        if is_err:
+            for c in range(1, ncols + 1):
+                ws.cell(row=r, column=c).fill = err_fill
+        ws.row_dimensions[r].height = 78
+    ws.append([])
+    ws.append(["", "Errores, omisiones o simplificaciones encontrados:",
+               f'=COUNTA(C5:C{ws.max_row - 1})&" consultas, de ellas "&{sum(1 for e in AI_LOG if e[0])}&" con error"'])
+    ws.cell(row=ws.max_row, column=2).font = Font(bold=True)
+    ws.append(["", "No se adjuntan conversaciones completas ni datos sensibles."])
+    ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+    for col, width in zip("ABCDEFG", [4, 20, 30, 30, 36, 40, 16]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -1868,6 +1949,7 @@ def main():
     build_budget(wb)
     build_scenarios(wb)
     build_resilience(wb)
+    build_ai_log(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)
