@@ -86,3 +86,17 @@ Diagrama: `diagramas/mapa_trafico.png`.
 - Diseño físico: 4 racks (3 de cómputo con 3 DGX cada uno + 1 de red y almacenamiento). Cada rack de cómputo: 24 U de 42, 30,6 kW, ~391 kg de servidores, 3.315 CFM de aire. El límite no es el espacio: es la energía y el calor. Si el proveedor solo soporta ~25 kW por rack, se pasa a 2 DGX por rack (6 racks).
 - Los DGX H100 se enfrían por aire: hace falta pasillo contenido o intercambiadores en la puerta trasera para ~31 kW por rack. No presentar enfriamiento líquido directo, porque este equipo no lo usa.
 - Opciones descartadas con números: Marte (la señal tarda 6 a 44 min ida y vuelta contra un TTFT de 2 s), órbita (mínimo ~251 m² de radiadores ideales, más radiación, eclipses y lanzamientos), submarino (cada reparación exige sacar la cápsula; Natick es un experimento).
+
+## 9. Electricidad y enfriamiento
+
+Hoja Energía, con tres casos lado a lado: normal (promedio), máxima y degradada (un nodo y un módulo de enfriamiento fuera).
+
+- TI máxima: 9 × 10,2 kW + 12 kW = 103,8 kW. La potencia del DGX ya incluye sus GPUs; no se suman otra vez.
+- Sitio: 138,8 kW en el punto de diseño (35 kW no TI del ejemplo). Con 160 kW contratados queda 13 % de holgura. En promedio el sitio usa ~91 kW.
+- Energía: 799 MWh al año (TI promedio 70,2 kW × PUE 1,30 × 8.760 h). En São Paulo cuesta ~USD 117.000.
+- Enfriamiento: 3 módulos de 60 kW. Con uno fuera quedan 120 kW, más que los 103,8 kW de calor. El agua del circuito necesita ~2,5 kg/s (~149 L/min) con 10 °C de subida.
+- Hallazgo 1: NVIDIA declara 38.557 BTU/h por DGX, que son 11,3 kW, más que los 10,2 kW de entrada. Con ese valor la TI llegaría a ~114 kW y el enfriamiento N+1 igual alcanza (120 kW). Hay que aclararlo con NVIDIA o con una medición.
+- Hallazgo 2: con demanda ×2 (16 nodos) el sitio pediría ~234 kW, por encima de los 160 kW contratados. Crecer exige negociar más potencia y enfriamiento con el proveedor, no solo comprar servidores.
+- UPS: 120 kW durante 10 min = 20 kWh útiles → ~35 kWh nominales de baterías. Cubre la TI máxima, pero no todo el sitio (138,8 kW): hay que confirmar con el proveedor qué parte del enfriamiento queda protegida mientras arrancan los generadores. Las baterías también deben poder entregar 120 kW, no solo la energía.
+- Ambiente: ~88 t CO₂e al año con la red de Brasil. Agua directa supuesta en 0 (circuito cerrado); con 1 o 2 L/kWh serían ~615 o ~1.230 m³ al año, así que hay que pedirle el WUE al proveedor. Residuos: ~1,2 t de servidores cada ~5 años, para reciclar.
+- Recordar: kW es potencia y kWh es energía. Un PUE bajo no implica bajas emisiones ni poca agua.

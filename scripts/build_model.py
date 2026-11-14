@@ -172,6 +172,33 @@ INPUTS = [
      SRC.format("13.4") + " (ejemplo)", "Supuesto", ""),
     ("PUE", "PUE anual del centro de datos", 1.30, "x", "0.00",
      SRC.format("13.4") + " (ejemplo)", "Supuesto", "Se confirma con el proveedor de colocation"),
+    ("P_NO_TI", "Cargas que no son de TI en el punto de diseño (enfriamiento, UPS, luces)", 35, "kW", "0.0",
+     SRC.format("13.3") + " (ejemplo)", "Supuesto", "Lo pone el proveedor; hay que pedirle su valor"),
+    ("ACOMETIDA", "Potencia eléctrica contratada para nuestra zona", 160, "kW", "0",
+     SRC.format("13.3") + " (ejemplo)", "Supuesto", ""),
+    ("DGX_BTU", "Calor que declara NVIDIA por DGX H100", 38_557, "BTU/h", "#,##0",
+     "Guía de usuario DGX H100/H200 de NVIDIA", "Documentado", "Equivale a más que los 10,2 kW: se revisa"),
+    ("MODULO_FRIO", "Capacidad de cada módulo de enfriamiento", 60, "kW térmicos", "0",
+     SRC.format("13.5") + " (ejemplo)", "Supuesto", ""),
+    ("N_MODULOS", "Módulos de enfriamiento", 3, "módulos", "0",
+     SRC.format("13.5") + " (ejemplo)", "Supuesto", "N+1: aguanta uno fuera de servicio"),
+    ("DELTA_T", "Subida de temperatura del agua en el circuito", 10, "°C", "0",
+     SRC.format("13.5") + " (ejemplo)", "Supuesto", ""),
+    ("CP_AGUA", "Calor específico del agua", 4_180, "J/(kg·°C)", "#,##0",
+     "Propiedad física", "Documentado", "Con glicol sería distinto"),
+    ("UPS_KW", "Carga protegida por la UPS", 120, "kW", "0",
+     SRC.format("13.6") + " (ejemplo)", "Supuesto", "TI + enfriamiento crítico"),
+    ("UPS_MIN", "Autonomía de la UPS", 10, "min", "0",
+     SRC.format("13.6") + " (ejemplo)", "Supuesto", "Tiempo para que arranquen los generadores"),
+    ("UPS_EFIC", "Eficiencia de la UPS", 0.90, "%", "0%", SRC.format("13.6"), "Supuesto", ""),
+    ("UPS_DOD", "Profundidad de descarga permitida", 0.80, "%", "0%", SRC.format("13.6"), "Supuesto", ""),
+    ("UPS_ENVEJ", "Capacidad que conserva la batería al final de su vida", 0.80, "%", "0%",
+     SRC.format("13.6"), "Supuesto", ""),
+    ("WUE", "Agua consumida por kWh de TI", 0, "L/kWh", "0.0",
+     "Supuesto: enfriamiento en circuito cerrado sin torres evaporativas", "Supuesto",
+     "Hay que pedírselo al proveedor; la hoja Energía muestra qué pasa con 1 y 2 L/kWh"),
+    ("VIDA_EQUIPO", "Vida útil de los servidores", 5, "años", "0",
+     "Estimación propia", "Supuesto", "Para estimar residuos electrónicos"),
     ("Ubicación", None),
     ("UBICACION", "Ubicación elegida", "São Paulo", "-", "@",
      "Decisión de Juliana (13-nov-2026)", "Documentado", "Debe coincidir con un encabezado de la hoja Ubicación"),
@@ -346,6 +373,16 @@ LOG = [
      "Calculado"),
     ("Área de radiadores en órbita", '=ROUND(ORB_AREA,0)&" m²"', "Stefan-Boltzmann ideal (§12.4)",
      "Baja como cota mínima", "Calculado"),
+    ("Potencia de TI máxima", '=ROUND(E_P_TI_M,1)&" kW; sitio "&ROUND(E_P_SITIO_M,1)&" kW"',
+     "Energía: 9 × 10,2 kW + 12 kW; + 35 kW no TI", "Media: las cargas no TI son del ejemplo", "Calculado"),
+    ("Energía anual", '=ROUND(E_ANUAL/1000,0)&" MWh/año, USD "&ROUND(E_COSTO,0)',
+     "Energía: TI promedio × PUE × 8.760 h", "Alta: el consumo promedio es supuesto", "Calculado"),
+    ("Calor declarado por DGX", '=ROUND(DGX_KW_CALOR,1)&" kW (38.557 BTU/h)"',
+     "Guía DGX H100; no coincide con los 10,2 kW", "El enfriamiento N+1 alcanza igual", "Calculado"),
+    ("Agua directa (WUE)", '=WUE&" L/kWh"', "Supuesto de circuito cerrado", "Alta: pedir el dato al proveedor",
+     "Supuesto"),
+    ("Valores eléctricos y térmicos del ejemplo", "35 kW no TI, 160 kW contratados, 3 × 60 kW, UPS 120 kW × 10 min",
+     "Enunciado §13", "Media: los define el proveedor de colocation", "Supuesto"),
 ]
 
 
@@ -933,6 +970,9 @@ def build_inventory(wb):
         ws.cell(row=r, column=6, value=f"=E{r}*GPUS_NODO")
         ws.cell(row=r, column=7, value=f"={base}+NODOS_POR_RACK")
         style_body(ws, r, ncols)
+        key = {"Base": "BASE", "Demanda ×2": "X2", "Rendimiento −30 %": "BAJA",
+               "Demanda ×2 y rendimiento −30 %": "X2_BAJA"}[label]
+        add_name(wb, f"ESC_NODOS_{key}", "Inventario", "E", r)
 
     for col, width in zip("ABCDEFG", [20, 46, 16, 20, 20, 18, 22]):
         ws.column_dimensions[col].width = width
@@ -1235,6 +1275,139 @@ def build_location(wb):
     ws.freeze_panes = "C5"
 
 
+# Three operating cases side by side: normal (average), maximum, degraded (one node and one cooling module out).
+ENERGY_CASES = ["Normal (promedio)", "Máxima", "Degradada (−1 nodo, −1 módulo)"]
+# (key, label, [normal, max, degraded] formulas or single formula, unit, fmt, note)
+ENERGY = [
+    ("Balance eléctrico", None),
+    ("E_NODOS_ON", "Nodos encendidos", ["=NODOS", "=NODOS", "=NODOS-NODOS_PERDIDOS"], "nodos", "0", ""),
+    ("E_P_NODO", "Potencia por nodo", ["=P_NODO_PROM", "=P_NODO_MAX", "=P_NODO_MAX"], "kW", "0.0",
+     "En la degradada, los nodos que quedan trabajan más"),
+    ("E_P_AUX", "Red, almacenamiento y servicios", ["=P_AUX_PROM", "=P_AUX_MAX", "=P_AUX_MAX"], "kW", "0.0", ""),
+    ("E_P_TI", "Potencia de TI", "={c}{E_NODOS_ON}*{c}{E_P_NODO}+{c}{E_P_AUX}", "kW", "0.0",
+     "La potencia del servidor ya incluye sus GPUs: no se suman otra vez"),
+    ("E_P_SITIO", "Potencia total del sitio",
+     ["=E_P_TI_N*PUE", "=E_P_TI_M+P_NO_TI", "=E_P_TI_D+P_NO_TI"], "kW", "0.0",
+     "Normal: TI × PUE. Máxima y degradada: TI + cargas no TI del punto de diseño"),
+    ("E_HOLG_ACOM", "Holgura frente a la potencia contratada", "=1-{c}{E_P_SITIO}/ACOMETIDA", "%", "0%",
+     "Falta revisar arranques, derrateo y mantenimiento"),
+    ("Balance térmico", None),
+    ("E_CALOR", "Calor a retirar (≈ potencia de TI)", "={c}{E_P_TI}", "kW", "0.0",
+     "Casi toda la electricidad de TI termina como calor"),
+    ("E_FRIO_DISP", "Enfriamiento disponible",
+     ["=N_MODULOS*MODULO_FRIO", "=N_MODULOS*MODULO_FRIO", "=(N_MODULOS-1)*MODULO_FRIO"], "kW", "0", ""),
+    ("E_FRIO_OK", "¿Alcanza el enfriamiento?", '=IF({c}{E_FRIO_DISP}>={c}{E_CALOR},"Sí","No")', "-", "@", ""),
+    ("E_FRIO_USO", "Uso del enfriamiento", "={c}{E_CALOR}/{c}{E_FRIO_DISP}", "%", "0%", ""),
+    ("E_CAUDAL", "Caudal de agua del circuito", "={c}{E_CALOR}*1000/(CP_AGUA*DELTA_T)", "kg/s", "0.00",
+     "Calor ÷ (calor específico × subida de temperatura)"),
+    ("E_CAUDAL_LMIN", "Caudal en litros por minuto", "={c}{E_CAUDAL}*60", "L/min", "0",
+     "Agua: 1 kg ≈ 1 L. El enunciado da ~149 L/min"),
+]
+
+ENERGY_SINGLE = [
+    ("Energía y costo anual (perfil promedio)", None),
+    ("E_ANUAL", "Energía del sitio al año", "=E_P_SITIO_N*HORAS_ANIO", "kWh/año", "#,##0",
+     "El enunciado da ~799.438 kWh"),
+    ("E_ANUAL_TI", "Energía de TI al año", "=E_P_TI_N*HORAS_ANIO", "kWh/año", "#,##0", ""),
+    ("E_COSTO", "Costo de la electricidad", "=E_ANUAL*PRECIO_KWH", "USD/año", "#,##0",
+     "Con el precio de la ubicación elegida"),
+    ("Respaldo (UPS)", None),
+    ("UPS_UTIL", "Energía útil necesaria", "=UPS_KW*UPS_MIN/60", "kWh", "0.0", "Carga × tiempo"),
+    ("UPS_NOMINAL", "Capacidad nominal de baterías", "=UPS_UTIL/(UPS_EFIC*UPS_DOD*UPS_ENVEJ)", "kWh", "0.0",
+     "El enunciado da ~35 kWh"),
+    ("UPS_CUBRE", "¿La UPS cubre la TI máxima?", '=IF(UPS_KW>=E_P_TI_M,"Sí","No")', "-", "@",
+     "Las baterías también deben poder entregar esa potencia, no solo la energía"),
+    ("Revisión del dato de potencia", None),
+    ("DGX_KW_CALOR", "Calor declarado por DGX convertido a kW", "=DGX_BTU/3412.14", "kW", "0.0",
+     "1 kW = 3.412,14 BTU/h. Da más que los 10,2 kW de la entrada"),
+    ("TI_MAX_CALOR", "TI máxima si cada DGX disipara ese valor", "=NODOS*DGX_KW_CALOR+P_AUX_MAX", "kW", "0.0", ""),
+    ("FRIO_OK_CALOR", "¿Alcanza el enfriamiento con un módulo fuera?",
+     '=IF((N_MODULOS-1)*MODULO_FRIO>=TI_MAX_CALOR,"Sí","No")', "-", "@", "Sigue alcanzando: el diseño aguanta la duda"),
+    ("Impacto ambiental", None),
+    ("AMB_CO2", "Emisiones de operación", "=E_ANUAL*FACTOR_EMISION/1000", "t CO₂e/año", "#,##0",
+     "Energía × factor de la red de la ubicación"),
+    ("AMB_AGUA", "Agua directa", "=E_ANUAL_TI*WUE/1000", "m³/año", "#,##0", "Con el WUE de Entradas"),
+    ("AMB_AGUA_1", "Agua directa si WUE = 1 L/kWh", "=E_ANUAL_TI*1/1000", "m³/año", "#,##0", "Sensibilidad"),
+    ("AMB_AGUA_2", "Agua directa si WUE = 2 L/kWh", "=E_ANUAL_TI*2/1000", "m³/año", "#,##0", "Sensibilidad"),
+    ("AMB_RESIDUOS", "Equipo de cómputo a reemplazar al final de su vida", "=NODOS*130.45/1000", "t", "0.00",
+     "9 DGX × 130,45 kg, cada VIDA_EQUIPO años; hay que reciclarlo"),
+    ("Crecimiento (demanda ×2)", None),
+    ("E_TI_X2", "TI máxima con demanda ×2", "=ESC_NODOS_X2*P_NODO_MAX+P_AUX_MAX", "kW", "0.0",
+     "Con los nodos del escenario ×2 de la hoja Inventario"),
+    ("E_SITIO_X2", "Sitio máximo con demanda ×2", "=E_TI_X2+P_NO_TI*E_TI_X2/E_P_TI_M", "kW", "0.0",
+     "Supone que las cargas no TI crecen en proporción"),
+    ("E_ACOM_X2", "¿Cabe en la potencia contratada?", '=IF(E_SITIO_X2<=ACOMETIDA,"Sí","No")', "-", "@",
+     "Si no cabe, crecer exige más potencia y enfriamiento, no solo servidores"),
+]
+
+
+def build_energy(wb):
+    ws = wb.create_sheet("Energía")
+    title(ws, "Electricidad, energía y enfriamiento",
+          "kW es potencia (cuánto en un instante). kWh es energía (potencia × tiempo). Tres casos de operación.")
+    ncols = 7
+    ws.append([])
+    ws.append(["Nombre", "Concepto"] + ENERGY_CASES + ["Unidad", "Cómo se obtiene"])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 32
+    cols = ["C", "D", "E"]
+    suffix = ["_N", "_M", "_D"]
+
+    rows, r = {}, ws.max_row
+    for item in ENERGY:
+        r += 1
+        if item[1] is not None:
+            rows[item[0]] = r
+    for item in ENERGY:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, f, unit, fmt, note = item
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=key)
+        ws.cell(row=r, column=2, value=label)
+        for i, col in enumerate(cols):
+            val = f[i] if isinstance(f, list) else f.format(c=col, **rows)
+            ws.cell(row=r, column=3 + i, value=val).number_format = fmt
+            add_name(wb, key + suffix[i], "Energía", col, r)
+        ws.cell(row=r, column=6, value=unit)
+        ws.cell(row=r, column=7, value=note)
+        style_body(ws, r, ncols)
+
+    ws.append([])
+    for item in ENERGY_SINGLE:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, "", "", unit, note])
+        r = ws.max_row
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key, "Energía", "C", r)
+
+    for text in [
+        "Los DGX H100 se enfrían por aire. El aire caliente pasa a las unidades de enfriamiento del proveedor, que "
+        "lo llevan al circuito de agua y de ahí al exterior. Con ~31 kW por rack hace falta pasillo caliente "
+        "contenido o intercambiadores en la puerta trasera.",
+        "N+1 en módulos no prueba redundancia en bombas, tuberías, controles ni alimentación: eso se le exige al "
+        "proveedor por contrato y se revisa en la visita.",
+        "Un PUE bajo no significa bajas emisiones ni poca agua: son tres indicadores distintos.",
+    ]:
+        ws.append(["", text])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7)
+        ws.cell(row=r, column=2).alignment = WRAP
+        ws.cell(row=r, column=2).font = NOTE_FONT
+        ws.row_dimensions[r].height = 32
+
+    for col, width in zip("ABCDEFG", [16, 48, 16, 16, 18, 12, 62]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "C5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -1272,6 +1445,7 @@ def main():
     build_overload(wb)
     build_network(wb)
     build_location(wb)
+    build_energy(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)

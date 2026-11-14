@@ -34,4 +34,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 5: service architecture (logical and deployment diagrams, overload sheet)
 - [x] Step 6: networking and storage (traffic map, storage budget)
 - [x] Step 7: location (colocation in São Paulo vs Querétaro and Santiago; exotic options ruled out)
-- [ ] Step 8: power, energy and cooling
+- [x] Step 8: power, energy and cooling (normal, maximum and degraded balances)
+- [ ] Step 9: budget
