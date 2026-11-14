@@ -35,4 +35,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 6: networking and storage (traffic map, storage budget)
 - [x] Step 7: location (colocation in São Paulo vs Querétaro and Santiago; exotic options ruled out)
 - [x] Step 8: power, energy and cooling (normal, maximum and degraded balances)
-- [ ] Step 9: budget
+- [x] Step 9: budget (CAPEX, OPEX, TCO and 8 cost scenarios)
+- [ ] Step 10: resilience and recovery

@@ -383,6 +383,19 @@ LOG = [
      "Supuesto"),
     ("Valores eléctricos y térmicos del ejemplo", "35 kW no TI, 160 kW contratados, 3 × 60 kW, UPS 120 kW × 10 min",
      "Enunciado §13", "Media: los define el proveedor de colocation", "Supuesto"),
+    ("Precio del DGX H100", "USD 350.000", "Decisión de Juliana; enunciado §14.1, dentro del rango público "
+     "USD 300–400 mil", "Media: NVIDIA no publica precio oficial", "Supuesto"),
+    ("Ajuste por colocation", "Sin obra eléctrica, UPS, enfriamiento ni edificio; +USD 100.000 de adecuación",
+     "Decisión de Juliana: el proveedor lo cobra en la renta", "Media", "Supuesto"),
+    ("Impuestos de importación", '=ROUND(IMPUESTO_IMPORT*100,0)&" % sobre el equipo importado"',
+     "Decisión de Juliana; fuentes: >50 % antes de ReData, 18–25 % de arancel", "Alta: depende de ReData y de la "
+     "reforma de 2027", "Supuesto"),
+    ("CAPEX / OPEX / TCO", '="USD "&ROUND(CAPEX/1E6,2)&" M / "&ROUND(OPEX/1E6,2)&" M / "&ROUND(TCO/1E6,2)&" M"',
+     "Hoja Presupuesto", "Hereda la de precios y rendimiento", "Calculado"),
+    ("Costo por petición", '="USD "&ROUND(COSTO_PET,4)&" (a tiempo y sin error: "&ROUND(COSTO_PET_BUENA,4)&")"',
+     "TCO ÷ 328,5 millones de peticiones", "Media", "Calculado"),
+    ("Escenario que más pesa en el riesgo", "Rendimiento −30 % y hardware +30 %: los dos rompen el CAPEX",
+     "Hoja Escenarios", "Baja", "Calculado"),
 ]
 
 
@@ -1408,6 +1421,249 @@ def build_energy(wb):
     ws.freeze_panes = "C5"
 
 
+EJ = "Enunciado §14 (valor hipotético, no es cotización)"
+PRICE_NOTE = "USD, nov-2026, sin impuestos de importación (se suman aparte)"
+
+# CAPEX lines: (name, label, qty formula, unit price, imported?, source, scope note)
+CAPEX = [
+    ("CX_DGX", "Servidores DGX H100 (8 GPUs)", "=NODOS", 350_000, True,
+     "Enunciado §14.1; rango público USD 300–400 mil (sin precio oficial de NVIDIA)", "Incluye garantía estándar"),
+    ("CX_RED", "Red y ópticas", "=1", 350_000, True, EJ, "Switches, cables y transceptores"),
+    ("CX_ALM", "Almacenamiento y servidores de soporte", "=1", 250_000, True, EJ,
+     "~3,9 TB brutos + 3 servidores de servicios"),
+    ("CX_RACK", "Racks y contención", "=RACK_TOTAL", 37_500, False, EJ + " (150.000 ÷ 4 racks)",
+     "Pasillo contenido para ~31 kW por rack"),
+    ("CX_ADEC", "Adecuación del espacio en colocation", "=1", 100_000, False, "Estimación propia",
+     "Jaula, PDUs de rack, cableado; reemplaza la obra eléctrica, UPS, enfriamiento y edificio del ejemplo"),
+    ("CX_INTEG", "Integración y puesta en marcha", "=1", 200_000, False, EJ, "Servicio local"),
+    ("CX_REP", "Repuestos iniciales", "=1", 150_000, True, EJ, "GPUs, fuentes, discos, ópticas"),
+]
+
+# OPEX lines: (name, label, formula, source)
+OPEX = [
+    ("OX_ELEC", "Electricidad", "=E_COSTO", "Hoja Energía: 799 MWh × precio de São Paulo (con impuestos)"),
+    ("OX_RENTA", "Renta de colocation (espacio, enfriamiento, UPS)", "=UB_RENTA",
+     "Hoja Ubicación: 103,8 kW × USD/kW/mes de CBRE"),
+    ("OX_PERSONAL", "Personal y servicios de operación", 600_000, EJ + "; guardia 24/7 con turnos y soporte remoto"),
+    ("OX_CONECT", "Conectividad (2 proveedores de internet)", 60_000, EJ),
+    ("OX_MANT", "Mantenimiento no cubierto por la garantía", 120_000, EJ),
+    ("OX_SOFT", "Software, observabilidad y seguridad", 60_000, EJ),
+    ("OX_SEGURO", "Seguros y cumplimiento", 36_000, EJ + " (sin agua: la pone el proveedor)"),
+    ("OX_RESP", "Copia fuera del sitio y reserva de recuperación", 48_000, EJ),
+    ("OX_CONT", "Contingencia operativa", 120_000, EJ),
+]
+
+
+def build_budget(wb):
+    ws = wb.create_sheet("Presupuesto")
+    title(ws, "Presupuesto: CAPEX, OPEX y TCO",
+          "USD, precios hipotéticos del enunciado salvo donde se indica. Azul = precio escrito a mano.")
+    ncols = 7
+    ws.append([])
+    ws.append(["Nombre", "Partida", "Cantidad", "Precio unitario", "Total", "¿Importado?", "Fuente y alcance"])
+    style_header(ws, ws.max_row, ncols)
+
+    ws.append(["CAPEX (compra inicial)"])
+    style_section(ws, ws.max_row, ncols)
+    first = ws.max_row + 1
+    for name, label, qty, price, imported, src, scope in CAPEX:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=name)
+        ws.cell(row=r, column=2, value=label)
+        ws.cell(row=r, column=3, value=qty).number_format = "0"
+        c = ws.cell(row=r, column=4, value=price)
+        c.font = INPUT_FONT
+        c.number_format = "#,##0"
+        ws.cell(row=r, column=5, value=f"=C{r}*D{r}").number_format = "#,##0"
+        ws.cell(row=r, column=6, value="Sí" if imported else "No")
+        ws.cell(row=r, column=7, value=f"{src}. {scope}. {PRICE_NOTE}.")
+        style_body(ws, r, ncols)
+        add_name(wb, name, "Presupuesto", "E", r)
+        add_name(wb, name + "_P", "Presupuesto", "D", r)
+    last = ws.max_row
+
+    def line(name, label, formula, fmt="#,##0", note="", input_val=False):
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=name)
+        ws.cell(row=r, column=2, value=label)
+        c = ws.cell(row=r, column=5, value=formula)
+        c.number_format = fmt
+        if input_val:
+            c.font = INPUT_FONT
+        ws.cell(row=r, column=7, value=note)
+        style_body(ws, r, ncols)
+        add_name(wb, name, "Presupuesto", "E", r)
+
+    line("CX_IMPORTADO", "Equipo importado", f'=SUMIF(F{first}:F{last},"Sí",E{first}:E{last})')
+    line("IMPUESTO_IMPORT", "Carga de impuestos de importación en Brasil", 0.50, "0%",
+         "Supuesto prudente: fuentes hablan de >50 % antes de ReData; arancel de 18–25 % en servidores grandes",
+         input_val=True)
+    line("CX_IMPUESTOS", "Impuestos de importación", "=CX_IMPORTADO*IMPUESTO_IMPORT")
+    line("CX_SUBTOTAL", "Subtotal", f"=SUM(E{first}:E{last})+CX_IMPUESTOS")
+    line("CONTINGENCIA", "Contingencia", 0.20, "0%", "Enunciado §14.1", input_val=True)
+    line("CX_CONT", "Monto de contingencia", "=CX_SUBTOTAL*CONTINGENCIA")
+    line("CAPEX", "CAPEX total", "=CX_SUBTOTAL+CX_CONT")
+    for c in range(1, ncols + 1):
+        ws.cell(row=ws.max_row, column=c).font = Font(bold=True)
+
+    ws.append([])
+    ws.append(["OPEX (cada año)"])
+    style_section(ws, ws.max_row, ncols)
+    o_first = ws.max_row + 1
+    for name, label, val, src in OPEX:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=name)
+        ws.cell(row=r, column=2, value=label)
+        c = ws.cell(row=r, column=5, value=val)
+        c.number_format = "#,##0"
+        if not isinstance(val, str):
+            c.font = INPUT_FONT
+        ws.cell(row=r, column=7, value=f"{src}. USD/año, nov-2026.")
+        style_body(ws, r, ncols)
+        add_name(wb, name, "Presupuesto", "E", r)
+    o_last = ws.max_row
+    line("OX_FIJO", "Parte fija del OPEX (todo menos electricidad y renta)", f"=SUM(E{o_first+2}:E{o_last})")
+    line("OPEX", "OPEX anual", f"=SUM(E{o_first}:E{o_last})")
+    for c in range(1, ncols + 1):
+        ws.cell(row=ws.max_row, column=c).font = Font(bold=True)
+
+    ws.append([])
+    ws.append(["TCO e indicadores (demanda base constante, sin descuento financiero ni valor residual)"])
+    style_section(ws, ws.max_row, ncols)
+    line("TCO", "TCO a 3 años", "=CAPEX+ANIOS_TCO*OPEX", note="CAPEX + años × OPEX")
+    line("PET_PERIODO", "Peticiones en el periodo", "=PET_DIA*365*ANIOS_TCO", note="El enunciado da 328,5 millones")
+    line("COSTO_PET", "Costo por petición", "=TCO/PET_PERIODO", "0.0000", "Supone que todas se completan")
+    line("FRAC_BUENAS", "Peticiones a tiempo y sin error (cota)", "=SLO_DISPONIBILIDAD*(1-SLO_ERRORES)*0.95", "0.0%",
+         "Disponibilidad × (1 − errores) × 95 % dentro del p95. La calidad de las respuestas está pendiente de medir")
+    line("COSTO_PET_BUENA", "Costo por petición correcta y a tiempo", "=COSTO_PET/FRAC_BUENAS", "0.0000", "")
+    line("COSTO_MTOK", "Costo por millón de tokens (entrada + salida)",
+         "=TCO/(PET_PERIODO*(TOK_ENTRADA+TOK_SALIDA)/1E6)", "0.00",
+         "Denominador: tokens de entrada y salida. No comparar con tarifas de API que cobran solo una parte")
+    line("COSTO_MTOK_SAL", "Costo por millón de tokens de salida (todo el costo cargado a la salida)",
+         "=TCO/(PET_PERIODO*TOK_SALIDA/1E6)", "0.00", "")
+
+    ws.append([])
+    ws.append(["Límites del enunciado (§4.5)"])
+    style_section(ws, ws.max_row, ncols)
+    for name, label, val, lim in [("OK_CAPEX", "CAPEX", "CAPEX", "CAPEX_MAX"),
+                                  ("OK_OPEX", "OPEX anual", "OPEX", "OPEX_MAX"),
+                                  ("OK_TCO", "TCO a 3 años", "TCO", "TCO_MAX")]:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=name)
+        ws.cell(row=r, column=2, value=label)
+        ws.cell(row=r, column=3, value=f"={val}").number_format = "#,##0"
+        ws.cell(row=r, column=4, value=f"={lim}").number_format = "#,##0"
+        ws.cell(row=r, column=5, value=f"={val}/{lim}").number_format = "0%"
+        ws.cell(row=r, column=6, value=f'=IF({val}<={lim},"Cumple","No cumple")')
+        ws.cell(row=r, column=7, value="Valor · límite · uso del límite · resultado")
+        style_body(ws, r, ncols)
+
+    for col, width in zip("ABCDEFG", [17, 48, 12, 15, 15, 12, 70]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "C5"
+
+
+# Scenarios: (label, nodes, hw factor, tax, energy factor, demand factor, note)
+SCEN = [
+    ("Base", "=NODOS", 1, "=IMPUESTO_IMPORT", 1, 1, ""),
+    ("Demanda ×2", "=ESC_NODOS_X2", 1, "=IMPUESTO_IMPORT", 1, "=FACTOR_CRECIMIENTO",
+     "Además exige más potencia contratada (hoja Energía)"),
+    ("Rendimiento −30 %", "=ESC_NODOS_BAJA", 1, "=IMPUESTO_IMPORT", 1, 1, ""),
+    ("Energía +50 %", "=NODOS", 1, "=IMPUESTO_IMPORT", 1.5, 1, ""),
+    ("Hardware +30 %", "=NODOS", 1.3, "=IMPUESTO_IMPORT", 1, 1, ""),
+    ("Entrada ×2", "=ROUNDUP(RPS_PICO/(CAP_REPLICA*TOK_POR_PET/(2*TOK_ENTRADA+TOK_SALIDA)*UTIL_DISENO*REPL_POR_NODO),0)+NODOS_PERDIDOS",
+     1, "=IMPUESTO_IMPORT", 1, 1,
+     "Supuesto: capacidad inversa a los tokens. Además no cabe en la ventana de 8.192"),
+    ("Tolerar un rack", "=ESC_NODOS_BASE-NODOS_PERDIDOS+NODOS_POR_RACK", 1, "=IMPUESTO_IMPORT", 1, 1,
+     "Para promesa de rack completo (hoja Inventario)"),
+    ("Con ReData (20 %)", "=NODOS", 1, 0.20, 1, 1, "Si se califica al régimen especial"),
+]
+
+
+def build_scenarios(wb):
+    ws = wb.create_sheet("Escenarios")
+    title(ws, "Escenarios de costo (§14.4)",
+          "Cada columna recalcula nodos, CAPEX, OPEX y TCO. Azul = lo que cambia en ese escenario.")
+    n = len(SCEN)
+    cols = [chr(ord("C") + i) for i in range(n)]
+    ncols = 2 + n
+    ws.append([])
+    ws.append(["Nombre", "Concepto"] + [s[0] for s in SCEN])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 32
+
+    rows = {}
+    spec = [
+        ("Lo que cambia", None),
+        ("S_NODOS", "Nodos", [s[1] for s in SCEN], "0"),
+        ("S_FHW", "Factor de precio del hardware", [s[2] for s in SCEN], "0.00"),
+        ("S_IMP", "Impuestos de importación", [s[3] for s in SCEN], "0%"),
+        ("S_FENER", "Factor de precio de la energía", [s[4] for s in SCEN], "0.00"),
+        ("S_FDEM", "Factor de demanda", [s[5] for s in SCEN], "0.00"),
+        ("Resultados", None),
+        ("S_RACKS", "Racks", "=ROUNDUP({c}{S_NODOS}/NODOS_POR_RACK,0)+1", "0"),
+        ("S_CAPEX", "CAPEX",
+         "=(1+CONTINGENCIA)*(({c}{S_NODOS}*CX_DGX_P+CX_RED+CX_ALM+CX_REP)*{c}{S_FHW}*(1+{c}{S_IMP})"
+         "+{c}{S_RACKS}*CX_RACK_P*{c}{S_FHW}+CX_ADEC+CX_INTEG)", "#,##0"),
+        ("S_ELEC", "Electricidad al año",
+         "=({c}{S_NODOS}*P_NODO_PROM+P_AUX_PROM)*PUE*HORAS_ANIO*PRECIO_KWH*{c}{S_FENER}", "#,##0"),
+        ("S_RENTA", "Renta al año", "=({c}{S_NODOS}*P_NODO_MAX+P_AUX_MAX)*RENTA_KW_MES*12", "#,##0"),
+        ("S_OPEX", "OPEX anual", "={c}{S_ELEC}+{c}{S_RENTA}+OX_FIJO", "#,##0"),
+        ("S_TCO", "TCO a 3 años", "={c}{S_CAPEX}+ANIOS_TCO*{c}{S_OPEX}", "#,##0"),
+        ("S_COSTO_PET", "Costo por petición", "={c}{S_TCO}/(PET_PERIODO*{c}{S_FDEM})", "0.0000"),
+        ("S_DIF", "Diferencia de TCO con la base", "={c}{S_TCO}-$C${S_TCO}", "#,##0"),
+        ("Contra los límites", None),
+        ("S_OK_CAPEX", "¿CAPEX ≤ USD 8 M?", '=IF({c}{S_CAPEX}<=CAPEX_MAX,"Sí","No")', "@"),
+        ("S_OK_OPEX", "¿OPEX ≤ USD 1,5 M?", '=IF({c}{S_OPEX}<=OPEX_MAX,"Sí","No")', "@"),
+        ("S_OK_TCO", "¿TCO ≤ USD 12,5 M?", '=IF({c}{S_TCO}<=TCO_MAX,"Sí","No")', "@"),
+    ]
+    r = ws.max_row
+    for item in spec:
+        r += 1
+        if item[1] is not None:
+            rows[item[0]] = r
+    for item in spec:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, f, fmt = item
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=key)
+        ws.cell(row=r, column=2, value=label)
+        for i, col in enumerate(cols):
+            if isinstance(f, list):
+                v = f[i]
+                c = ws.cell(row=r, column=3 + i, value=v)
+                if i > 0 and str(v) != str(f[0]):
+                    c.font = INPUT_FONT
+            else:
+                c = ws.cell(row=r, column=3 + i, value=f.format(c=col, **rows))
+            c.number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key + "_BASE", "Escenarios", "C", r)
+
+    ws.append([])
+    ws.append(["", "Variable que más mueve el TCO:"])
+    r = ws.max_row
+    rng = f"D{rows['S_DIF']}:{cols[-1]}{rows['S_DIF']}"
+    ws.cell(row=r, column=3, value=f"=INDEX(D4:{cols[-1]}4,MATCH(MAX({rng}),{rng},0))")
+    ws.cell(row=r, column=2).font = Font(bold=True)
+    notes = [s for s in SCEN if s[6]]
+    for label, *_, note in notes:
+        ws.append(["", f"{label}: {note}."])
+        ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+    ws.append(["", "Pérdida de un nodo o de un rack: no cambia el costo; cambia la capacidad (hoja Inventario). "
+               "El escenario \"Tolerar un rack\" muestra cuánto cuesta prometerlo."])
+    ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 34
+    for col in cols:
+        ws.column_dimensions[col].width = 14
+    ws.freeze_panes = "C5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -1446,6 +1702,8 @@ def main():
     build_network(wb)
     build_location(wb)
     build_energy(wb)
+    build_budget(wb)
+    build_scenarios(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)

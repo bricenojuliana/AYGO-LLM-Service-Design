@@ -100,3 +100,17 @@ Hoja Energía, con tres casos lado a lado: normal (promedio), máxima y degradad
 - UPS: 120 kW durante 10 min = 20 kWh útiles → ~35 kWh nominales de baterías. Cubre la TI máxima, pero no todo el sitio (138,8 kW): hay que confirmar con el proveedor qué parte del enfriamiento queda protegida mientras arrancan los generadores. Las baterías también deben poder entregar 120 kW, no solo la energía.
 - Ambiente: ~88 t CO₂e al año con la red de Brasil. Agua directa supuesta en 0 (circuito cerrado); con 1 o 2 L/kWh serían ~615 o ~1.230 m³ al año, así que hay que pedirle el WUE al proveedor. Residuos: ~1,2 t de servidores cada ~5 años, para reciclar.
 - Recordar: kW es potencia y kWh es energía. Un PUE bajo no implica bajas emisiones ni poca agua.
+
+## 10. Presupuesto
+
+Hojas Presupuesto y Escenarios. Todo en USD, precios a nov-2026; los del enunciado son hipotéticos, no cotizaciones.
+
+- CAPEX: USD 7,56 M (94,5 % del límite). Servidores 9 × 350.000 = 3,15 M; red 0,35 M; almacenamiento 0,25 M; racks 0,15 M; adecuación en colocation 0,10 M; integración 0,20 M; repuestos 0,15 M; impuestos de importación 1,95 M (50 % sobre 3,9 M importados); contingencia 20 %.
+- Por ser colocation se quitaron obra eléctrica, UPS, enfriamiento y edificio (1,2 M del ejemplo): el proveedor los cobra en la renta. Si no, se pagarían dos veces.
+- OPEX: USD 1,36 M al año (91 % del límite). Electricidad 0,117 M, renta 0,199 M, personal 0,6 M y el resto del ejemplo.
+- TCO a 3 años: USD 11,64 M (93 % del límite). Cumple los tres límites.
+- Costo por petición: USD 0,0354; contando solo las que llegan a tiempo y sin error, USD 0,0374. La calidad de la respuesta no está medida, así que este número es una cota.
+- Por millón de tokens: USD 7,87 si se cuentan entrada y salida; USD 70,9 si todo se carga a la salida. No compararlo con una tarifa de API que cobra solo una parte.
+- Escenarios: demanda ×2 sube el TCO a 16,8 M (pero baja el costo por petición a 0,026); rendimiento −30 % → 13,9 M; hardware +30 % → 13,8 M; energía +50 % → solo +0,18 M; tolerar un rack → 13,1 M; con ReData → 10,2 M.
+- Conclusión: la variable que domina el costo es la demanda; las que dominan el riesgo son el rendimiento real por réplica y el precio del hardware, que rompen el CAPEX con un 30 % de desvío. Antes de comprar hay que medir el rendimiento y conseguir cotizaciones. La energía casi no mueve el resultado.
+- Los impuestos de Brasil pesan 1,95 M: calificar a ReData ahorraría ~1,4 M en TCO.
