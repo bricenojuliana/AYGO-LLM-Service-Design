@@ -36,4 +36,6 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 7: location (colocation in São Paulo vs Querétaro and Santiago; exotic options ruled out)
 - [x] Step 8: power, energy and cooling (normal, maximum and degraded balances)
 - [x] Step 9: budget (CAPEX, OPEX, TCO and 8 cost scenarios)
-- [ ] Step 10: resilience and recovery
+- [x] Step 10: resilience (failure matrix, RTO/RPO, node-failure exercise)
+- [ ] Step 11: AI usage log
+- [ ] Step 12: Word proposal and final checklist

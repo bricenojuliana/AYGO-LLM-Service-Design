@@ -114,3 +114,15 @@ Hojas Presupuesto y Escenarios. Todo en USD, precios a nov-2026; los del enuncia
 - Escenarios: demanda ×2 sube el TCO a 16,8 M (pero baja el costo por petición a 0,026); rendimiento −30 % → 13,9 M; hardware +30 % → 13,8 M; energía +50 % → solo +0,18 M; tolerar un rack → 13,1 M; con ReData → 10,2 M.
 - Conclusión: la variable que domina el costo es la demanda; las que dominan el riesgo son el rendimiento real por réplica y el precio del hardware, que rompen el CAPEX con un 30 % de desvío. Antes de comprar hay que medir el rendimiento y conseguir cotizaciones. La energía casi no mueve el resultado.
 - Los impuestos de Brasil pesan 1,95 M: calificar a ReData ahorraría ~1,4 M en TCO.
+
+## 11. Resiliencia y crecimiento
+
+Hoja Resiliencia: matriz de 10 fallas, objetivos de recuperación y un ejercicio con números.
+
+- Presupuesto del mes: 43,2 min de caída (99,9 % en 30 días) y 9.000 errores (0,1 % de 9 millones de peticiones). Una sola intervención mal hecha puede gastar todo el tiempo de caída.
+- Cubierto con holgura: GPU, nodo, switch o enlace (red duplicada), una fuente o un corte de red eléctrica (UPS + generadores del proveedor), un módulo de enfriamiento, almacenamiento central (pesos en disco local), actualización defectuosa (réplica de prueba y vuelta atrás en ~15 min) y saturación (rechazos rápidos).
+- No cubierto: un rack completo (quedan 16,8 peticiones/s con holgura; al 100 % alcanzaría, sin margen) y la pérdida del sitio (semanas para comprar e importar equipo). Se aceptan y se documentan. Cubrir el rack cuesta ~USD 1,5 M más de TCO.
+- Ejercicio, nodo que cae en hora pico: se pierden ~46 peticiones en curso y ~69 que llegan a ese nodo durante los 30 s de detección. Total ~116 errores, el 1,3 % del presupuesto de errores del mes. Después quedan 22,4 peticiones/s, por encima del pico. Si cae un segundo nodo antes de los ~48 h de reparación, quedan 19,6 con holgura: se atiende, pero sin margen.
+- RTO/RPO: fallas de hardware → segundos, sin pérdida de datos (no se guardan conversaciones); versión mala → ~15 min; pesos desde fuera → ~19 min; datos de la aplicación → RPO de 1 h con copias cada hora; registros → hasta 24 h, sin copia externa.
+- Ensayos: apagar un nodo a propósito cada trimestre, restaurar una versión desde fuera cada semestre, restaurar datos cada mes en un entorno de prueba y un ejercicio de mesa anual de pérdida del sitio. Tener la copia no prueba que se pueda restaurar.
+- Crecer: demanda ×2 pide 16 nodos y ~234 kW, más que los 160 kW contratados. Hay que negociar potencia y enfriamiento con el proveedor con meses de anticipación.

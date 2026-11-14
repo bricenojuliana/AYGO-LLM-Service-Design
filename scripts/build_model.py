@@ -199,6 +199,17 @@ INPUTS = [
      "Hay que pedírselo al proveedor; la hoja Energía muestra qué pasa con 1 y 2 L/kWh"),
     ("VIDA_EQUIPO", "Vida útil de los servidores", 5, "años", "0",
      "Estimación propia", "Supuesto", "Para estimar residuos electrónicos"),
+    ("Resiliencia y recuperación", None),
+    ("DETECCION_S", "Tiempo para detectar que una réplica o nodo no responde", 30, "s", "0",
+     "Estimación propia", "Supuesto", "3 latidos perdidos de 10 s"),
+    ("REPARACION_H", "Tiempo para reparar o reemplazar un nodo", 48, "h", "0",
+     "Estimación propia", "Supuesto", "Con repuestos en sitio y soporte del fabricante"),
+    ("ROLLBACK_MIN", "Tiempo para volver a la versión anterior", 15, "min", "0",
+     "Estimación propia", "Supuesto", "Detectar + recargar pesos desde el disco local"),
+    ("RPO_DATOS_H", "Pérdida máxima aceptada de datos de la aplicación (RPO)", 1, "h", "0",
+     "Estimación propia", "Supuesto", "Copias cada hora fuera del sitio"),
+    ("DIAS_MES", "Días del mes para el presupuesto de disponibilidad", 30, "días", "0",
+     SRC.format("15"), "Documentado", ""),
     ("Ubicación", None),
     ("UBICACION", "Ubicación elegida", "São Paulo", "-", "@",
      "Decisión de Juliana (13-nov-2026)", "Documentado", "Debe coincidir con un encabezado de la hoja Ubicación"),
@@ -394,6 +405,12 @@ LOG = [
      "Hoja Presupuesto", "Hereda la de precios y rendimiento", "Calculado"),
     ("Costo por petición", '="USD "&ROUND(COSTO_PET,4)&" (a tiempo y sin error: "&ROUND(COSTO_PET_BUENA,4)&")"',
      "TCO ÷ 328,5 millones de peticiones", "Media", "Calculado"),
+    ("Tiempos de detección, reparación y vuelta atrás", '=DETECCION_S&" s / "&REPARACION_H&" h / "&ROLLBACK_MIN&" min"',
+     "Estimación propia", "Media: se miden en los ensayos", "Supuesto"),
+    ("Caída de un nodo en el pico", '=ROUND(EJ_ERRORES,0)&" errores ("&ROUND(EJ_PARTE_PRESUP*100,1)&" % del presupuesto del mes)"',
+     "Resiliencia: en curso + mal enrutadas durante la detección", "Media", "Calculado"),
+    ("Pérdida del sitio", "No cubierta: RTO de semanas", "Resiliencia; no hay segundo sitio en el presupuesto",
+     "Riesgo aceptado y documentado", "Calculado"),
     ("Escenario que más pesa en el riesgo", "Rendimiento −30 % y hardware +30 %: los dos rompen el CAPEX",
      "Hoja Escenarios", "Baja", "Calculado"),
 ]
@@ -1664,6 +1681,152 @@ def build_scenarios(wb):
     ws.freeze_panes = "C5"
 
 
+RESIL_NUM = [
+    ("Presupuestos del mes", None),
+    ("MIN_CAIDA_MES", "Minutos de caída permitidos al mes", "=DIAS_MES*24*60*(1-SLO_DISPONIBILIDAD)", "min",
+     "0.0", "El enunciado da 43,2 min: una sola intervención mal hecha se lo puede comer"),
+    ("PET_MES", "Peticiones al mes", "=PET_DIA*DIAS_MES", "peticiones", "#,##0", ""),
+    ("ERRORES_MES", "Errores permitidos al mes", "=PET_MES*SLO_ERRORES", "peticiones", "#,##0", "0,1 %"),
+    ("Ejercicio: cae un nodo en plena hora pico", None),
+    ("EJ_PERDIDAS", "Peticiones que estaban en curso en el nodo", "=CONC_REPL_NORMAL*REPL_POR_NODO", "peticiones",
+     "0", "Se pierden: el usuario ve un error y puede reintentar"),
+    ("EJ_LLEGADAS_DET", "Peticiones que llegan mientras se detecta la falla", "=RPS_PICO*DETECCION_S", "peticiones",
+     "0", "El router las sigue mandando a otras réplicas sanas; solo una parte iría al nodo caído"),
+    ("EJ_MAL_RUTEADAS", "De ellas, las que irían al nodo caído", "=EJ_LLEGADAS_DET*REPL_POR_NODO/REPL_TOTAL",
+     "peticiones", "0", "Reparto parejo entre réplicas"),
+    ("EJ_ERRORES", "Errores totales del evento", "=EJ_PERDIDAS+EJ_MAL_RUTEADAS", "peticiones", "0", ""),
+    ("EJ_PARTE_PRESUP", "Parte del presupuesto de errores del mes", "=EJ_ERRORES/ERRORES_MES", "%", "0.0%", ""),
+    ("EJ_CAP_DESPUES", "Capacidad admitida después", "=(REPL_TOTAL-REPL_POR_NODO)*CAP_UTIL_REPL", "peticiones/s",
+     "0.0", "Sigue por encima del pico de 20,83"),
+    ("EJ_SEGUNDO_NODO", "Capacidad si cae otro nodo antes de reparar el primero",
+     "=(REPL_TOTAL-2*REPL_POR_NODO)*CAP_UTIL_REPL", "peticiones/s", "0.0",
+     "Por debajo del pico con holgura: se atendería sin margen y la latencia quedaría en riesgo"),
+    ("EJ_RECHAZO_2", "Parte del pico que se rechazaría con dos nodos caídos",
+     "=MAX(0,1-(REPL_TOTAL-2*REPL_POR_NODO)*CAP_REPLICA/RPS_PICO)", "%", "0.0%",
+     "Con las réplicas al 100 % todavía alcanza (0 %), pero sin ningún margen"),
+]
+
+# Failure matrix rows: failure, detection, impact, remaining capacity formula, action, recovery, residual risk
+MATRIX = [
+    ("GPU", "Errores de la GPU en el monitoreo del servidor; la réplica deja de responder",
+     "Cae 1 réplica (4 GPUs)", "=(REPL_TOTAL-1)*CAP_UTIL_REPL",
+     "El router saca la réplica; se cambia la GPU con un repuesto", "Servicio: inmediato. Reparación: horas",
+     "Si hay que reiniciar el servidor, caen sus 2 réplicas"),
+    ("Nodo", "Faltan 3 latidos (~30 s)", "Caen 2 réplicas y las peticiones en curso",
+     "=(REPL_TOTAL-REPL_POR_NODO)*CAP_UTIL_REPL",
+     "El router lo saca; repuesto o garantía del fabricante", "Servicio: ~30 s. Reparación: ~48 h",
+     "Una segunda falla durante la reparación deja capacidad por debajo del pico"),
+    ("Switch o enlace", "Pérdida de enlace en los switches", "Ninguno si la red está duplicada",
+     "=REPL_TOTAL*CAP_UTIL_REPL", "Cada nodo va a los 2 switches; el tráfico sigue por el otro",
+     "Servicio: segundos. Reparación: horas",
+     "Un error de configuración puede tumbar los dos switches a la vez"),
+    ("Rack", "Caen 3 nodos juntos", "Caen 6 réplicas",
+     "=(REPL_TOTAL-NODOS_POR_RACK*REPL_POR_NODO)*CAP_UTIL_REPL",
+     "Control de admisión rechaza el exceso con \"intenta en un momento\"", "Según la causa: horas",
+     "No cubierto: en hora pico se rechaza parte de la demanda. Cubrirlo cuesta USD ~1,5 M más (11 nodos)"),
+    ("Alimentación eléctrica", "Alarma del proveedor y de las fuentes del servidor",
+     "Una fuente: ninguno. Corte de la red: la UPS aguanta hasta que arrancan los generadores",
+     "=REPL_TOTAL*CAP_UTIL_REPL", "Doble alimentación por rack; UPS y generadores del proveedor",
+     "Servicio: sin corte si el respaldo funciona", "Falla de la UPS o del generador; cuántas fuentes puede perder el DGX se confirma con NVIDIA"),
+    ("Enfriamiento", "Temperatura de entrada de aire y alarmas del proveedor",
+     "Un módulo: ninguno (quedan 120 kW). Dos módulos: no alcanza",
+     "=REPL_TOTAL*CAP_UTIL_REPL", "Con dos fuera se apagan réplicas para bajar el calor",
+     "Según el proveedor", "Bombas, tuberías y controles compartidos: se exige N+1 por contrato"),
+    ("Almacenamiento central", "Monitoreo del almacenamiento", "Las réplicas siguen: tienen los pesos en disco local",
+     "=REPL_TOTAL*CAP_UTIL_REPL", "Se reconstruye desde las otras 2 copias o desde la copia externa",
+     "Servicio: sin corte. Restaurar desde fuera: ~19 min por versión", "Sin almacenamiento no se pueden desplegar versiones nuevas"),
+    ("Actualización defectuosa", "Errores o latencia de la réplica de prueba", "Solo 1 réplica afectada",
+     "=(REPL_TOTAL-1)*CAP_UTIL_REPL", "Volver a la versión anterior (guardada en disco local)",
+     "~15 min", "Un error que solo aparece con mucha carga puede pasar la prueba"),
+    ("Saturación", "Fila llena, TTFT p95 subiendo, rechazos", "Rechazos rápidos en vez de respuestas lentas",
+     "=REPL_TOTAL*CAP_UTIL_REPL", "Admisión por tokens, fila de 1 s, límites por usuario",
+     "Se resuelve sola cuando baja la carga", "Si la demanda sube de forma sostenida, hay que comprar nodos (meses)"),
+    ("Pérdida del sitio", "Todo el servicio cae", "Servicio caído", "=0",
+     "Restaurar modelos y datos desde la copia externa en otra infraestructura",
+     "Semanas: comprar e importar hardware", "No cubierto por el presupuesto: se acepta y se documenta"),
+]
+
+
+def build_resilience(wb):
+    ws = wb.create_sheet("Resiliencia")
+    title(ws, "Resiliencia y recuperación",
+          "Qué pasa cuando algo falla. La capacidad que queda se compara con el pico de la hoja Demanda.")
+    ncols = 9
+    ws.append([])
+    ws.append(["Nombre", "Concepto", "Valor", "Unidad", "Cómo se obtiene", "", "", "", ""])
+    style_header(ws, ws.max_row, ncols)
+    for item in RESIL_NUM:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, unit, note])
+        r = ws.max_row
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=ncols)
+        add_name(wb, key, "Resiliencia", "C", r)
+
+    ws.append([])
+    ws.append(["Matriz de fallas (§15)"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Falla", "Detección", "Impacto", "Capacidad con holgura (peticiones/s)", "¿Cubre el pico?",
+               "Acción", "Tiempo de recuperación", "Riesgo que queda"])
+    style_header(ws, ws.max_row, ncols)
+    ws.row_dimensions[ws.max_row].height = 45
+    for fail, det, imp, cap, act, rec, res in MATRIX:
+        r = ws.max_row + 1
+        vals = ["", fail, det, imp, cap, f'=IF(E{r}>=RPS_PICO,"Sí","No")', act, rec, res]
+        for i, v in enumerate(vals, start=1):
+            ws.cell(row=r, column=i, value=v)
+        ws.cell(row=r, column=5).number_format = "0.0"
+        ws.cell(row=r, column=2).font = Font(bold=True)
+        style_body(ws, r, ncols)
+        ws.row_dimensions[r].height = 58
+
+    ws.append([])
+    ws.append(["Objetivos de recuperación"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Qué", "RTO (volver a dar servicio)", "RPO (datos que se pueden perder)", "Dónde está la copia",
+               "", "Cómo se prueba"])
+    style_header(ws, ws.max_row, ncols)
+    for row in [
+        ("Falla de GPU, nodo o enlace", "Segundos (el resto absorbe la carga)", "Nada: no se guardan conversaciones",
+         "No aplica", "Apagar un nodo a propósito en hora valle, cada trimestre"),
+        ("Versión defectuosa", "~15 min", "Nada", "Versión anterior en el disco local de cada nodo",
+         "Cada despliegue empieza por una réplica de prueba"),
+        ("Pesos del modelo", "~19 min desde fuera; segundos desde disco local", "Nada: copias fijas y versionadas",
+         "Disco local de cada DGX, almacenamiento central (3 copias) y copia fuera del sitio",
+         "Restaurar una versión desde fuera cada semestre y medir el tiempo"),
+        ("Datos de la aplicación (cuentas, cuotas, configuración)", "~1 h", "1 h (copia cada hora)",
+         "Almacenamiento central y copia fuera del sitio", "Restaurar en un entorno de prueba cada mes"),
+        ("Registros y métricas", "No urgente", "Hasta 24 h", "Solo en el sitio", "No se respaldan fuera"),
+        ("Pérdida del sitio", "Semanas", "1 h de datos de la aplicación", "Copia fuera del sitio",
+         "Ejercicio de mesa anual: quién decide, a quién se llama, qué se compra"),
+    ]:
+        r = ws.max_row + 1
+        for i, v in enumerate(row):
+            ws.cell(row=r, column=[2, 3, 4, 5, 7][i], value=v)
+        style_body(ws, r, ncols)
+        ws.row_dimensions[r].height = 44
+
+    for text in [
+        "Tener dos componentes no es alta disponibilidad si comparten alimentación, red, configuración o una causa "
+        "común de falla.",
+        "No se promete continuar respuestas a medias: si un nodo cae, las peticiones en curso se pierden y el "
+        "usuario reintenta.",
+    ]:
+        ws.append(["", text])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=ncols)
+        ws.cell(row=r, column=2).font = NOTE_FONT
+
+    for col, width in zip("ABCDEFGHI", [16, 26, 26, 26, 16, 10, 30, 22, 34]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -1704,6 +1867,7 @@ def main():
     build_energy(wb)
     build_budget(wb)
     build_scenarios(wb)
+    build_resilience(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)
