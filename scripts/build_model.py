@@ -1875,6 +1875,11 @@ AI_LOG = [
      "Partidas de obra eléctrica, UPS, enfriamiento y edificio",
      "Se contrastó con lo que incluye la renta de colocation",
      "Se quitaron USD 1,2 M que se habrían pagado dos veces", CONFIRM),
+    (True, "Guardar el modelo de cálculo en Excel",
+     "Archivo con fórmulas enlazadas",
+     "Juliana abrió el archivo y las columnas de valor aparecían vacías",
+     "Error de la IA: se guardaban las fórmulas sin sus resultados, y los visores que no recalculan las mostraban "
+     "vacías. Ahora el archivo se recalcula con LibreOffice y guarda los resultados junto a las fórmulas", CONFIRM),
 ]
 
 
@@ -1897,9 +1902,10 @@ def build_ai_log(wb):
             for c in range(1, ncols + 1):
                 ws.cell(row=r, column=c).fill = err_fill
         ws.row_dimensions[r].height = 78
+    last = ws.max_row
     ws.append([])
     ws.append(["", "Errores, omisiones o simplificaciones encontrados:",
-               f'=COUNTA(C5:C{ws.max_row - 1})&" consultas, de ellas "&{sum(1 for e in AI_LOG if e[0])}&" con error"'])
+               f'=COUNTA(C5:C{last})&" consultas, de ellas "&{sum(1 for e in AI_LOG if e[0])}&" con error"'])
     ws.cell(row=ws.max_row, column=2).font = Font(bold=True)
     ws.append(["", "No se adjuntan conversaciones completas ni datos sensibles."])
     ws.cell(row=ws.max_row, column=2).font = NOTE_FONT

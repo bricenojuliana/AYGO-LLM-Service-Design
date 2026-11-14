@@ -129,7 +129,7 @@ Hoja Resiliencia: matriz de 10 fallas, objetivos de recuperación y un ejercicio
 
 ## Anexo: uso de IA (§16)
 
-Hoja "Uso de IA": 10 consultas, 6 con errores, omisiones o simplificaciones (más de las 2 que pide el enunciado). Las más claras para la defensa:
+Hoja "Uso de IA": 11 consultas, 7 con errores, omisiones o simplificaciones (más de las 2 que pide el enunciado). Las más claras para la defensa:
 
 1. Error de la IA en el Excel: las tablas de sensibilidad se escribían encima del encabezado. Juliana revisaba el Excel y pidió capturas para que la IA también lo viera; en ellas apareció el error.
 2. Error de la herramienta web: los resúmenes automáticos negaban datos que sí estaban en las páginas. Se usaron solo valores leídos literalmente.
@@ -137,4 +137,5 @@ Hoja "Uso de IA": 10 consultas, 6 con errores, omisiones o simplificaciones (má
 4. Simplificación: el 99,88 % de calidad de FP8 era solo en inglés.
 5. Dato de memoria sin fuente: ~990 TFLOPS densos de la H100; NVIDIA solo publica la cifra con sparsity.
 6. Omisión: el calor declarado del DGX (11,3 kW) no coincide con los 10,2 kW.
+7. Error de la IA: el Excel guardaba fórmulas sin resultados y se veía vacío en visores que no recalculan. Lo encontró Juliana al abrirlo.
 

@@ -650,10 +650,17 @@ def annex(doc, wb):
 
     doc.add_heading("Anexo B. Uso de IA", 1)
     ws = wb["Uso de IA"]
-    rows = [(r[0], r[2], r[3], r[4], r[5]) for r in ws.iter_rows(min_row=5, values_only=True)
-            if isinstance(r[0], int)]
-    para(doc, "Herramienta en todas las filas: Claude Code (Claude Opus 5.5), con búsqueda y lectura web. Seis de las "
-              "diez consultas tuvieron errores, omisiones o simplificaciones (filas 2, 4, 5, 6, 7 y 8).", size=10)
+    rows, errs = [], []
+    for row in ws.iter_rows(min_row=5):
+        r = [c.value for c in row]
+        if isinstance(r[0], int):
+            rows.append((r[0], r[2], r[3], r[4], r[5]))
+            fill = row[0].fill.fgColor.rgb if row[0].fill and row[0].fill.fgColor else ""
+            if str(fill).upper().endswith("FBE9DD"):
+                errs.append(str(r[0]))
+    para(doc, f"Herramienta en todas las filas: Claude Code (Claude Opus 5.5), con búsqueda y lectura web. De las "
+              f"{len(rows)} consultas, {len(errs)} tuvieron errores, omisiones o simplificaciones (filas "
+              f"{', '.join(errs[:-1])} y {errs[-1]}).", size=10)
     table(doc, ["#", "Pregunta relevante", "Resultado usado", "Verificación humana", "Corrección realizada"],
           rows, widths=[0.8, 5, 5.6, 7, 6.6], size=8)
     portrait_section(doc)
