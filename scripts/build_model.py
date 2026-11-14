@@ -130,6 +130,36 @@ INPUTS = [
      "Decisión de Juliana", "Supuesto", "Regla contra abuso"),
     ("REINTENTOS_MAX", "Reintentos automáticos por petición", 1, "reintentos", "0",
      "Decisión de Juliana", "Supuesto", "Solo si aún no se envió ninguna palabra al usuario"),
+    ("Red y almacenamiento", None),
+    ("BYTES_TOKEN", "Bytes de texto por token", 4, "bytes", "0",
+     SRC.format("11") + " (aproximación didáctica)", "Supuesto", ""),
+    ("BYTES_EVENTO", "Bytes por token enviado al usuario, con su envoltorio", 150, "bytes", "0",
+     "Estimación propia", "Supuesto",
+     "Cada palabra viaja en un pequeño mensaje con encabezados; pesa más que el texto solo"),
+    ("NVLINK_BW", "Ancho de banda NVLink entre GPUs del mismo nodo", 900, "GB/s", "0",
+     "Guía de usuario DGX H100/H200 de NVIDIA", "Documentado", ""),
+    ("ENLACE_EJEMPLO", "Enlace de red de ejemplo", 25, "Gb/s", "0",
+     SRC.format("11"), "Documentado", "Para comparar tiempos de carga"),
+    ("ALMAC_LECTURA", "Lectura sostenida del almacenamiento central", 10, "GB/s", "0",
+     "Estimación propia", "Supuesto", "Se confirma con el equipo que se cotice (paso 9)"),
+    ("CACHE_LOCAL_DGX", "Disco local de datos de cada DGX (8 × 3,84 TB)", 30.72, "TB", "0.00",
+     "Guía de usuario DGX H100/H200 de NVIDIA", "Documentado", "En RAID 0: rápido, pero sin protección"),
+    ("VERSIONES_MODELO", "Versiones del modelo que se guardan", 3, "versiones", "0",
+     "Estimación propia", "Supuesto", "La actual, la anterior (para volver atrás) y una en prueba"),
+    ("IMAGENES_GB", "Imágenes de contenedores y artefactos", 200, "GB", "0",
+     "Estimación propia", "Supuesto", ""),
+    ("DATOS_APP_GB", "Datos de la aplicación (cuentas, cuotas, configuración)", 10, "GB", "0",
+     "Estimación propia", "Supuesto", "Sin conversaciones: no se guardan"),
+    ("LOG_BYTES_PET", "Registro operativo por petición (sin contenido)", 1_000, "bytes", "#,##0",
+     "Estimación propia", "Supuesto", "Tiempos, tokens, errores, identificador anónimo"),
+    ("RETENCION_DIAS", "Retención de registros y métricas", 30, "días", "0",
+     "Estimación propia", "Supuesto", ""),
+    ("REPLICACION", "Copias de cada dato en el almacenamiento central", 3, "copias", "0",
+     "Estimación propia", "Supuesto", "Aguanta perder un disco o un servidor de almacenamiento"),
+    ("HOLGURA_ALMAC", "Holgura de crecimiento del almacenamiento", 2, "x", "0",
+     "Estimación propia", "Supuesto", ""),
+    ("ENLACE_RESPALDO", "Enlace hacia la copia fuera del sitio", 1, "Gb/s", "0",
+     "Estimación propia", "Supuesto", "Define cuánto tarda restaurar desde fuera"),
     ("Presupuesto (USD, valores hipotéticos)", None),
     ("CAPEX_MAX", "CAPEX máximo", 8_000_000, "USD", "#,##0",
      SRC.format("4.5"), "Documentado", ""),
@@ -271,6 +301,18 @@ LOG = [
      "Estimación propia", "Alta: se revisa con la ubicación y con una medición", "Supuesto"),
     ("Límites por usuario", '=LIM_CONC_USUARIO&" a la vez, "&LIM_MIN_USUARIO&" por minuto, "&REINTENTOS_MAX&" reintento"',
      "Decisión de Juliana", "Baja: no cambian el dimensionamiento", "Supuesto"),
+    ("Decisiones de operación de la sección 7", "Revisadas una por una",
+     "Aprobadas por Juliana (respuestas a medias se pierden, caché solo por cliente, réplicas siempre "
+     "encendidas, etc.)", "Baja", "Documentado"),
+    ("Tráfico de aplicación en el pico", '=ROUND(APP_TOTAL,1)&" Mb/s"',
+     "Red y almacenamiento: entrada × 4 bytes + salida × 150 bytes", "Media: el envoltorio es estimado",
+     "Calculado"),
+    ("Comunicación entre GPUs de una réplica", '=ROUND(TP_TRAFICO,1)&" GB/s ("&ROUND(TP_USO_NVLINK*100,1)&" % de NVLink)"',
+     "Aproximación de 2 sincronizaciones por capa", "Media: aproximación de orden de magnitud", "Calculado"),
+    ("Carga de todas las réplicas", '=ROUND(CARGA_TODAS,0)&" s desde el almacenamiento central"',
+     "18 × pesos ÷ lectura del almacenamiento", "Alta: la lectura de 10 GB/s es supuesta", "Calculado"),
+    ("Almacenamiento central", '=ROUND(ALM_BRUTO,1)&" TB brutos"',
+     "Modelos + imágenes + datos + registros, × 3 copias × 2 de holgura", "Media", "Calculado"),
 ]
 
 
@@ -920,6 +962,97 @@ def build_overload(wb):
     ws.freeze_panes = "A5"
 
 
+NETWORK = [
+    ("1. Tráfico de aplicación (usuarios ↔ servicio), en el pico", None),
+    ("APP_ENTRADA", "Texto que suben los usuarios", "=RPS_PICO*TOK_ENTRADA*BYTES_TOKEN*8/1E6", "Mb/s", "0.0",
+     "Peticiones/s × tokens × bytes × 8 bits. El enunciado da ~375 kB/s para entrada + salida"),
+    ("APP_SALIDA", "Respuestas que bajan palabra a palabra", "=TOKS_SAL_PICO*BYTES_EVENTO*8/1E6", "Mb/s", "0.0",
+     "Tokens de salida/s × bytes por mensaje"),
+    ("APP_TOTAL", "Total de aplicación", "=APP_ENTRADA+APP_SALIDA", "Mb/s", "0.0",
+     "Muy poco: cualquier enlace de 1 Gb/s sobra"),
+    ("APP_TOTAL_ESTRES", "Total con la demanda ×2", "=APP_TOTAL*FACTOR_CRECIMIENTO", "Mb/s", "0.0", ""),
+    ("2. Comunicación entre GPUs de una réplica", None),
+    ("TP_BYTES_TOKEN", "Datos que intercambian las 4 GPUs por cada token",
+     "=2*CAPAS*HIDDEN*2", "bytes", "#,##0",
+     "Aproximación: 2 sincronizaciones por capa × dimensión oculta × 2 bytes"),
+    ("TP_TRAFICO", "Intercambio entre GPUs en el punto de operación",
+     "=(TOKS_ENT_REPLICA+TOKS_SAL_REPLICA)*TP_BYTES_TOKEN/BYTES_GB", "GB/s", "0.0",
+     "Tokens/s de la réplica × datos por token"),
+    ("TP_USO_NVLINK", "Fracción de NVLink que usa", "=TP_TRAFICO/NVLINK_BW", "%", "0.0%", "Holgado dentro del nodo"),
+    ("TP_USO_RED", "Fracción que usaría si cruzara un enlace de ejemplo", "=TP_TRAFICO/(ENLACE_EJEMPLO/8)", "%",
+     "0%", "Por eso la réplica no se reparte entre servidores"),
+    ("3. Tráfico de operación: cargar el modelo", None),
+    ("CARGA_25", "Cargar los pesos de una réplica por el enlace de ejemplo",
+     "=MEM_PESOS_BF16*8/ENLACE_EJEMPLO", "s", "0", "Ideal; el enunciado da 44,8 s con 140 GB"),
+    ("CARGA_TODAS", "Cargar las 18 réplicas a la vez desde el almacenamiento central",
+     "=REPL_TOTAL*MEM_PESOS_BF16/ALMAC_LECTURA", "s", "0",
+     "Arranque en frío de todo el servicio; manda la lectura del almacenamiento"),
+    ("CARGA_LOCAL", "¿Caben las versiones del modelo en el disco local de cada DGX?",
+     '=IF(VERSIONES_MODELO*MEM_PESOS_BF16/1000<=CACHE_LOCAL_DGX,"Sí","No")', "-", "@",
+     "Guardar los pesos en local evita depender de la red al reiniciar un nodo"),
+    ("RESTAURAR_FUERA", "Traer una versión del modelo desde la copia fuera del sitio",
+     "=MEM_PESOS_BF16*8/ENLACE_RESPALDO/60", "min", "0",
+     "Solo si se pierden el almacenamiento central y las copias locales"),
+    ("4. Presupuesto de almacenamiento central", None),
+    ("ALM_MODELOS", "Versiones del modelo", "=VERSIONES_MODELO*MEM_PESOS_BF16", "GB", "#,##0", ""),
+    ("ALM_IMAGENES", "Imágenes y artefactos", "=IMAGENES_GB", "GB", "#,##0", ""),
+    ("ALM_DATOS", "Datos de la aplicación", "=DATOS_APP_GB", "GB", "#,##0", ""),
+    ("ALM_LOGS", "Registros y métricas", "=PET_DIA*LOG_BYTES_PET*RETENCION_DIAS/BYTES_GB", "GB", "#,##0.0",
+     "Peticiones/día × bytes × días de retención"),
+    ("ALM_UTIL", "Capacidad útil necesaria", "=ALM_MODELOS+ALM_IMAGENES+ALM_DATOS+ALM_LOGS", "GB", "#,##0", ""),
+    ("ALM_BRUTO", "Capacidad bruta con copias y holgura", "=ALM_UTIL*REPLICACION*HOLGURA_ALMAC/1000", "TB", "0.0",
+     "Útil × copias × holgura"),
+    ("ALM_RESPALDO", "Copia fuera del sitio (modelos, configuración, datos)",
+     "=(ALM_MODELOS+ALM_DATOS+ALM_IMAGENES)/1000", "TB", "0.00",
+     "Los registros no se respaldan fuera: se pueden perder sin afectar el servicio"),
+]
+
+STORAGE_TABLE_LINKS = [10, 25, 100, 400]
+
+
+def build_network(wb):
+    ws = wb.create_sheet("Red y almacenamiento")
+    title(ws, "Red y almacenamiento",
+          "Tres tipos de tráfico muy distintos: el de los usuarios es pequeño; el pesado es mover el modelo y "
+          "comunicar las GPUs.")
+    headers = ["Nombre", "Concepto", "Valor", "Unidad", "Cómo se obtiene"]
+    ncols = len(headers)
+    ws.append([])
+    ws.append(headers)
+    style_header(ws, ws.max_row, ncols)
+    for item in NETWORK:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, formula, unit, fmt, note = item
+        ws.append([key, label, formula, unit, note])
+        r = ws.max_row
+        ws.cell(row=r, column=3).number_format = fmt
+        style_body(ws, r, ncols)
+        add_name(wb, key, "'Red y almacenamiento'", "C", r)
+
+    ws.append([])
+    ws.append(["Tiempo ideal para cargar una réplica según el enlace"])
+    style_section(ws, ws.max_row, ncols)
+    ws.append(["", "Enlace (Gb/s)", "Segundos", "Minutos", "Nota"])
+    style_header(ws, ws.max_row, ncols)
+    for gbps in STORAGE_TABLE_LINKS:
+        r = ws.max_row + 1
+        ws.cell(row=r, column=2, value=gbps).font = INPUT_FONT
+        ws.cell(row=r, column=3, value=f"=MEM_PESOS_BF16*8/B{r}").number_format = "0"
+        ws.cell(row=r, column=4, value=f"=C{r}/60").number_format = "0.0"
+        style_body(ws, r, ncols)
+    ws.cell(row=ws.max_row, column=5, value="La DGX H100 trae puertos de hasta 400 Gb/s")
+    ws.append(["", "Son mínimos teóricos: el tiempo real suma la lectura del disco, los protocolos, cargar en las "
+               "GPUs y calentar el motor."])
+    ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+
+    for col, width in zip("ABCDE", [20, 56, 14, 12, 70]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -955,6 +1088,7 @@ def main():
     build_performance(wb)
     build_inventory(wb)
     build_overload(wb)
+    build_network(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)

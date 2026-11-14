@@ -64,3 +64,14 @@ Diagramas: `diagramas/arquitectura_logica.png` y `diagramas/despliegue.png`. Com
 **Escalado.** El límite es físico: 18 réplicas. Todas quedan cargadas y calientes; no se apagan en horas valle porque cargar 141 GB de pesos toma tiempo (se calcula en el paso 6). Para crecer hay que comprar nodos, y con ellos energía y refrigeración: escalar contenedores no crea GPUs. Indicadores para ampliar: uso sostenido por encima del 70 %, rechazos por fila llena o TTFT p95 acercándose a 2 s.
 
 **Operación y seguridad.** Despliegues graduales por réplica (una primero, luego el resto) con vuelta atrás. Registro de modelos con versión y huella de los pesos. Secretos en un gestor, nunca en el código. Cifrado en tránsito y en reposo. Aislamiento entre clientes en cuotas, caché y registros. Registros sin contenido de conversaciones por defecto, con retención corta y borrado a pedido. Las instrucciones maliciosas dentro de documentos se tratan como texto del usuario, no como órdenes; el modelo no ejecuta herramientas en el escenario base.
+
+## 7 (cont.). Red y almacenamiento
+
+Diagrama: `diagramas/mapa_trafico.png`.
+
+- Tres tráficos muy distintos. El de los usuarios es pequeño: ~15 Mb/s en el pico (~30 Mb/s con demanda ×2). Pesan más las respuestas que las preguntas, porque cada palabra viaja en su propio mensaje.
+- Entre las 4 GPUs de una réplica: ~24 GB/s, el 2,6 % de NVLink. Por un enlace de 25 Gb/s sería 7,5 veces más de lo que cabe: esa es la razón numérica para no repartir una réplica entre servidores.
+- Cargar el modelo: 45 s ideales por réplica con 25 Gb/s (el enunciado da 44,8 s). Arrancar las 18 a la vez desde el almacenamiento central: ~254 s, limitado por la lectura (10 GB/s supuesta). Por eso cada DGX guarda copia local de los pesos en su disco de 30,7 TB.
+- Almacenamiento central: ~640 GB útiles (3 versiones del modelo, imágenes, datos, registros de 30 días) → ~3,9 TB brutos con 3 copias y holgura ×2.
+- Copia fuera del sitio: ~0,6 TB. Restaurar una versión del modelo por 1 Gb/s tarda ~19 min; esto entra en el RTO del paso 10. Tener la copia no prueba que se pueda restaurar a tiempo: hay que ensayarlo.
+- No se guardan conversaciones, así que no hay que respaldarlas.

@@ -1,0 +1,36 @@
+// Mapa de tráfico: los tres tipos de tráfico y su tamaño.
+// Generar: python scripts/build_diagrams.py
+digraph trafico {
+  graph [rankdir=LR, bgcolor="white", pad=0.4, nodesep=0.45, ranksep=0.7,
+         fontname="Noto Sans", fontsize=11, fontcolor="#3b3b3b", splines=spline,
+         label=<<FONT COLOR="#b0703c">━━ Aplicación</FONT>: pequeño, unos 15 Mb/s en el pico.   <FONT COLOR="#4f7a66">━━ Entre GPUs</FONT>: unos 24 GB/s por réplica, solo dentro del servidor.   <FONT COLOR="#6b7fa8">━━ Operación</FONT>: pesado pero ocasional (141 GB por réplica al arrancar).>,
+         labelloc=b, labeljust=l]
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=10.5,
+         color="#c9c2b6", fillcolor="#faf7f2", fontcolor="#2e2e2e", penwidth=1.1, margin="0.14,0.08"]
+  edge  [arrowsize=0.6, penwidth=1.6, fontname="Noto Sans", fontsize=9]
+
+  usuarios [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/usuario.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Usuarios</B></TD></TR></TABLE>>, fillcolor="#efe9df"]
+  borde [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/gateway.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Borde y servicios</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">gateway · router</FONT></TD></TR></TABLE>>]
+  respaldo [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/internet.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Copia fuera del sitio</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">~0,6 TB</FONT></TD></TR></TABLE>>]
+  almac [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/almacenamiento.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Almacenamiento central</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">~3,9 TB brutos · 3 copias</FONT></TD></TR></TABLE>>]
+  obs [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="28" HEIGHT="28"><IMG SRC="iconos/metricas.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Métricas y registros</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">~0,3 GB/día · 30 días</FONT></TD></TR></TABLE>>]
+
+  subgraph cluster_dgx {
+    label="Un servidor DGX H100"; labeljust=l; labelloc=t; style="rounded"; color="#b9c7c0"; bgcolor="#f3f7f5";
+    disco [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/registro.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Disco local</B><BR/><FONT POINT-SIZE="9" COLOR="#6b6459">30,7 TB · copia de los pesos</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#9fb5aa"]
+    gpus [label=<<TABLE BORDER="0" CELLSPACING="3" CELLPADDING="0"><TR><TD FIXEDSIZE="TRUE" WIDTH="26" HEIGHT="26"><IMG SRC="iconos/motor.png" SCALE="TRUE"/></TD></TR><TR><TD><B>Réplica · 4 GPUs</B><BR/><FONT POINT-SIZE="9" COLOR="#4f7a66">~24 GB/s entre GPUs por NVLink<BR/>(capacidad: 900 GB/s)</FONT></TD></TR></TABLE>>, fillcolor="#e4eee9", color="#4f7a66", penwidth=1.8]
+  }
+
+  // Aplicación
+  usuarios -> borde [dir=both, color="#b0703c", label="  ~15 Mb/s  ", fontcolor="#b0703c"]
+  borde -> gpus [dir=both, color="#b0703c", label="  peticiones y respuestas  ", fontcolor="#b0703c"]
+
+  // Entre GPUs
+  // va dentro del bloque de la réplica (texto verde)
+
+  // Operación
+  almac -> disco [color="#6b7fa8", label="  pesos: 141 GB por réplica  ", fontcolor="#6b7fa8"]
+  disco -> gpus [color="#6b7fa8", style=dashed, label=" al arrancar ", fontcolor="#6b7fa8"]
+  almac -> respaldo [dir=both, color="#6b7fa8", style=dashed, label="  1 Gb/s · restaurar ~19 min  ", fontcolor="#6b7fa8"]
+  borde -> obs [color="#6b7fa8", style=dotted, label=" métricas sin contenido ", fontcolor="#6b7fa8"]
+}
