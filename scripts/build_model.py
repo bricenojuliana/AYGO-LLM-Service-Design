@@ -1715,7 +1715,7 @@ MATRIX = [
     ("Nodo", "Faltan 3 latidos (~30 s)", "Caen 2 réplicas y las peticiones en curso",
      "=(REPL_TOTAL-REPL_POR_NODO)*CAP_UTIL_REPL",
      "El router lo saca; repuesto o garantía del fabricante", "Servicio: ~30 s. Reparación: ~48 h",
-     "Una segunda falla durante la reparación deja capacidad por debajo del pico"),
+     "Una segunda falla durante la reparación deja el pico sin margen"),
     ("Switch o enlace", "Pérdida de enlace en los switches", "Ninguno si la red está duplicada",
      "=REPL_TOTAL*CAP_UTIL_REPL", "Cada nodo va a los 2 switches; el tráfico sigue por el otro",
      "Servicio: segundos. Reparación: horas",
@@ -1723,7 +1723,7 @@ MATRIX = [
     ("Rack", "Caen 3 nodos juntos", "Caen 6 réplicas",
      "=(REPL_TOTAL-NODOS_POR_RACK*REPL_POR_NODO)*CAP_UTIL_REPL",
      "Control de admisión rechaza el exceso con \"intenta en un momento\"", "Según la causa: horas",
-     "No cubierto: en hora pico se rechaza parte de la demanda. Cubrirlo cuesta USD ~1,5 M más (11 nodos)"),
+     "No cubierto: en hora pico queda sin margen (al 100 % alcanza justo). Cubrirlo cuesta USD ~1,5 M más (11 nodos)"),
     ("Alimentación eléctrica", "Alarma del proveedor y de las fuentes del servidor",
      "Una fuente: ninguno. Corte de la red: la UPS aguanta hasta que arrancan los generadores",
      "=REPL_TOTAL*CAP_UTIL_REPL", "Doble alimentación por rack; UPS y generadores del proveedor",
@@ -1956,7 +1956,29 @@ def main():
     wb.calculation = CalcProperties(fullCalcOnLoad=True)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT)
+    store_computed_values()
     print(f"Saved {OUT.relative_to(ROOT)}")
+
+
+def store_computed_values():
+    """openpyxl writes formulas without results, so previews (phone, mail, Excel's
+    protected view) show empty cells. LibreOffice recalculates and saves the results
+    next to the formulas."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    tmp = Path(tempfile.mkdtemp())
+    if shutil.which("flatpak"):
+        cmd = ["flatpak", "run", f"--filesystem={tmp}", "org.libreoffice.LibreOffice"]
+    elif shutil.which("soffice"):
+        cmd = ["soffice"]
+    else:
+        print("LibreOffice not found: the file keeps formulas only")
+        return
+    subprocess.run(cmd + ["--headless", "--convert-to", "xlsx", "--outdir", str(tmp), str(OUT)],
+                   check=True, capture_output=True, timeout=180)
+    shutil.copyfile(tmp / OUT.name, OUT)
 
 
 if __name__ == "__main__":

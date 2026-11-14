@@ -9,7 +9,7 @@ The deliverables themselves are written in Spanish. This repo only holds them pl
 | Path | Content |
 |------|---------|
 | `modelo/modelo_calculo.xlsx` | Calculation model (inputs, decision log, and later demand, memory, inventory, power, costs, scenarios) |
-| `propuesta/` | Technical proposal (Word), added in later steps; `notas_secciones.md` holds working notes per section |
+| `propuesta/` | `propuesta_tecnica.docx` (the proposal) and `notas_secciones.md` (working notes per section) |
 | `diagramas/` | Graphviz sources (`.dot`), rendered diagrams and hand-drawn line icons |
 | `scripts/` | Python scripts that generate the Excel, the diagrams and the Word file |
 
@@ -20,7 +20,10 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/build_model.py
 .venv/bin/python scripts/build_diagrams.py   # needs Graphviz (`dot`)
+.venv/bin/python scripts/build_proposal.py   # needs LibreOffice
 ```
+
+`build_model.py` uses LibreOffice to store computed results next to the formulas, so the Excel shows values even in previews. The Word file takes its tables from the recalculated Excel; regenerate it after changing any input.
 
 In the Excel file, blue values are inputs typed by hand. Everything else should come from formulas, so changing an input updates the rest.
 
@@ -37,5 +40,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 8: power, energy and cooling (normal, maximum and degraded balances)
 - [x] Step 9: budget (CAPEX, OPEX, TCO and 8 cost scenarios)
 - [x] Step 10: resilience (failure matrix, RTO/RPO, node-failure exercise)
-- [ ] Step 11: AI usage log
-- [ ] Step 12: Word proposal and final checklist
+- [x] Step 11: AI usage log
+- [x] Step 12: Word proposal and final checklist
