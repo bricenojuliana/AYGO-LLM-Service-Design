@@ -160,6 +160,23 @@ INPUTS = [
      "Estimación propia", "Supuesto", ""),
     ("ENLACE_RESPALDO", "Enlace hacia la copia fuera del sitio", 1, "Gb/s", "0",
      "Estimación propia", "Supuesto", "Define cuánto tarda restaurar desde fuera"),
+    ("Energía (base para la ubicación; se detalla en el paso 8)", None),
+    ("P_NODO_MAX", "Potencia máxima de un DGX H100", 10.2, "kW", "0.0",
+     "Guía de usuario DGX H100/H200 de NVIDIA", "Documentado",
+     "La guía la lista como entrada máxima; ya incluye las GPUs, no se suman aparte"),
+    ("P_NODO_PROM", "Potencia promedio de un DGX H100 en operación", 6.8, "kW", "0.0",
+     SRC.format("13.4") + " (ejemplo)", "Supuesto", "Hay que reemplazarlo por un perfil medido"),
+    ("P_AUX_MAX", "Red, almacenamiento y servicios: potencia máxima", 12, "kW", "0.0",
+     SRC.format("13.2") + " (ejemplo)", "Supuesto", ""),
+    ("P_AUX_PROM", "Red, almacenamiento y servicios: potencia promedio", 9, "kW", "0.0",
+     SRC.format("13.4") + " (ejemplo)", "Supuesto", ""),
+    ("PUE", "PUE anual del centro de datos", 1.30, "x", "0.00",
+     SRC.format("13.4") + " (ejemplo)", "Supuesto", "Se confirma con el proveedor de colocation"),
+    ("Ubicación", None),
+    ("UBICACION", "Ubicación elegida", "São Paulo", "-", "@",
+     "Decisión de Juliana (13-nov-2026)", "Documentado", "Debe coincidir con un encabezado de la hoja Ubicación"),
+    ("ULTIMA_MILLA", "Tiempo extra de la conexión del usuario (ida y vuelta)", 30, "ms", "0",
+     "Estimación propia", "Supuesto", "Se suma a los pings entre servidores"),
     ("Presupuesto (USD, valores hipotéticos)", None),
     ("CAPEX_MAX", "CAPEX máximo", 8_000_000, "USD", "#,##0",
      SRC.format("4.5"), "Documentado", ""),
@@ -313,6 +330,22 @@ LOG = [
      "18 × pesos ÷ lectura del almacenamiento", "Alta: la lectura de 10 GB/s es supuesta", "Calculado"),
     ("Almacenamiento central", '=ROUND(ALM_BRUTO,1)&" TB brutos"',
      "Modelos + imágenes + datos + registros, × 3 copias × 2 de holgura", "Media", "Calculado"),
+    ("Supuestos de red y almacenamiento", "11 valores estimados (lectura 10 GB/s, 3 versiones, 30 días, etc.)",
+     "Aprobados por Juliana", "Media", "Supuesto"),
+    ("Tipo de instalación", "Colocation", "Decisión de Juliana", "Baja", "Documentado"),
+    ("Ubicación", '=UBICACION&" (comparada con Querétaro y Santiago)"', "Decisión de Juliana; hoja Ubicación",
+     "Baja", "Documentado"),
+    ("Precio de la electricidad", '=PRECIO_KWH&" USD/kWh"', "GlobalPetrolPrices, empresas, mar-2026, con impuestos",
+     "Media: precio minorista; un contrato grande podría ser menor", "Documentado"),
+    ("Emisiones de la red", '=FACTOR_EMISION&" kg CO₂e/kWh"', "Ember 2025 vía agregadores",
+     "Media: fuente secundaria", "Documentado"),
+    ("Renta de espacio", '=RENTA_KW_MES&" USD/kW/mes"', "CBRE 2026, punto medio del rango",
+     "Media: el rango es para 250–500 kW; el nuestro es más chico", "Documentado"),
+    ("Peor tiempo de red", '=UB_RTT&" ms"', "WonderNetwork + 30 ms de última milla", "Media", "Calculado"),
+    ("Potencia por rack de cómputo", '=RACK_KW&" kW"', "3 DGX × 10,2 kW", "Hay que confirmarla con el proveedor",
+     "Calculado"),
+    ("Área de radiadores en órbita", '=ROUND(ORB_AREA,0)&" m²"', "Stefan-Boltzmann ideal (§12.4)",
+     "Baja como cota mínima", "Calculado"),
 ]
 
 
@@ -1053,6 +1086,155 @@ def build_network(wb):
     ws.freeze_panes = "A5"
 
 
+CITIES = ["Querétaro", "São Paulo", "Santiago"]
+GPP = "GlobalPetrolPrices, precio para empresas, mar-2026, con impuestos"
+EMB = "Ember 2025 vía Carbon Recycling / GreenCalculus (fuente secundaria)"
+CBRE = "CBRE Global Data Center Trends 2026 (Q1 2026, contratos de 250–500 kW)"
+WN = "WonderNetwork, promedio entre servidores, 13-nov-2026"
+
+# (key, label, values per city or template, unit, fmt, source)
+LOCATION = [
+    ("Datos de cada ciudad (azul = dato de fuente)", None),
+    ("in_precio", "Precio de la electricidad", [0.199, 0.146, 0.197], "USD/kWh", "0.000", GPP),
+    ("in_emision", "Emisiones de la red eléctrica", [0.474, 0.110, 0.291], "kg CO₂e/kWh", "0.000", EMB),
+    ("in_renta", "Renta de espacio (punto medio del rango)", [260, 160, 200], "USD/kW/mes", "0", CBRE),
+    ("in_disp", "Capacidad disponible en el mercado", [31.5, 51.5, 5.4], "MW", "0.0", CBRE),
+    ("in_ping", "Peor ping a una capital hispana de la región", [193, 158, 178], "ms", "0",
+     WN + "; QRO usa Ciudad de México como referencia"),
+    ("in_peor", "Ciudad del peor caso", ["Bogotá", "Ciudad de México", "Ciudad de México"], "-", "@", WN),
+    ("in_sismo", "Riesgo sísmico", ["Medio", "Bajo", "Alto"], "-", "@", "Apreciación general; verificar con mapas oficiales"),
+    ("Resultados", None),
+    ("UB_ENERGIA", "Energía al año", "=(NODOS*P_NODO_PROM+P_AUX_PROM)*PUE*HORAS_ANIO/1000", "MWh/año", "#,##0",
+     "Igual en las tres: depende del equipo, no de la ciudad"),
+    ("UB_COSTO_ELEC", "Costo de electricidad", "={c}{UB_ENERGIA}*1000*{c}{in_precio}", "USD/año", "#,##0", ""),
+    ("UB_KW_CONTRATO", "Potencia a contratar", "=NODOS*P_NODO_MAX+P_AUX_MAX", "kW", "0.0", "Potencia máxima de TI"),
+    ("UB_RENTA", "Renta de espacio", "={c}{UB_KW_CONTRATO}*{c}{in_renta}*12", "USD/año", "#,##0",
+     "Puede ser mayor: nuestro contrato es más chico que 250 kW"),
+    ("UB_TOTAL", "Electricidad + renta", "={c}{UB_COSTO_ELEC}+{c}{UB_RENTA}", "USD/año", "#,##0", ""),
+    ("UB_CO2", "Emisiones de operación", "={c}{UB_ENERGIA}*{c}{in_emision}", "t CO₂e/año", "#,##0",
+     "MWh × kg/kWh = toneladas"),
+    ("UB_RTT", "Peor tiempo de red para un usuario", "={c}{in_ping}+ULTIMA_MILLA", "ms", "0", "Ping + última milla"),
+    ("UB_RTT_OK", "¿Cabe en la red supuesta para el TTFT?", '=IF({c}{UB_RTT}<=RED_IDA_VUELTA*1000,"Sí","No")',
+     "-", "@", "Hoja Sobrecarga: 0,2 s"),
+    ("UB_DISP_OK", "¿Hay capacidad disponible para nosotros?", '=IF({c}{in_disp}*1000>={c}{UB_KW_CONTRATO}*PUE,"Sí","No")',
+     "-", "@", "Necesitamos ~0,14 MW con enfriamiento"),
+]
+
+PHYSICAL = [
+    ("Diseño físico en el sitio elegido", None),
+    ("RACK_U_NODO", "Altura de un DGX H100", "=8", "U", "0", "Guía de usuario DGX H100: 8U"),
+    ("RACK_U_OCUP", "Altura ocupada por rack de cómputo", "=NODOS_POR_RACK*RACK_U_NODO", "U de 42", "0",
+     "Sobra espacio: el límite no es el espacio sino la energía y el calor"),
+    ("RACK_KW", "Potencia por rack de cómputo", "=NODOS_POR_RACK*P_NODO_MAX", "kW", "0.0",
+     "Hay que confirmar que el proveedor soporte esta densidad con aire"),
+    ("RACK_KG", "Peso de los servidores por rack", "=NODOS_POR_RACK*130.45", "kg", "0",
+     "Guía DGX H100: 130,45 kg máx. por equipo; falta sumar el rack"),
+    ("RACK_CFM", "Aire que mueven los servidores de un rack", "=NODOS_POR_RACK*1105", "CFM", "#,##0",
+     "Guía DGX H100: 1.105 CFM por equipo, de frente a atrás"),
+    ("RACK_TOTAL", "Racks en total", "=RACKS_COMPUTO+1", "racks", "0", "3 de cómputo + 1 de red y almacenamiento"),
+    ("RACK_ALT", "Si el proveedor solo da ~25 kW por rack", "=ROUNDUP(NODOS/INT(25/P_NODO_MAX),0)+1", "racks",
+     "0", "2 servidores por rack: más racks, pero perder uno quita menos réplicas"),
+]
+
+EXOTIC = [
+    ("Opciones descartadas con números (§12.3–12.5)", None),
+    ("MARTE_RTT", "Marte: ida y vuelta mínima de la señal", "=2*3*60", "s", "#,##0",
+     "NASA: 3 a 22 min solo de ida. Contra un TTFT de 2 s: imposible para usuarios en la Tierra"),
+    ("MARTE_RTT_MAX", "Marte: ida y vuelta máxima", "=2*22*60", "s", "#,##0", ""),
+    ("ORB_P", "Órbita: calor a disipar (TI máxima)", "=NODOS*P_NODO_MAX+P_AUX_MAX", "kW", "0.0", ""),
+    ("ORB_AREA", "Órbita: área mínima de radiadores",
+     "=ORB_P*1000/(0.9*5.670374E-8*(300^4-3^4))", "m²", "0",
+     "Stefan-Boltzmann ideal, ε = 0,9, 300 K, espacio profundo. El enunciado da ~251 m²; sin contar sol, Tierra ni masa"),
+]
+
+EXOTIC_TEXT = [
+    "Submarino: el mar recibe el calor, pero hay que diseñar toda la cadena de intercambio, sellado y corrosión. "
+    "Con 72 GPUs que fallan de vez en cuando, cada reparación obliga a sacar la cápsula. Project Natick es un "
+    "experimento, no una garantía.",
+    "Órbita: además de los radiadores, hay radiación que daña la electrónica, eclipses sin sol, enlaces limitados con "
+    "tierra y costo de lanzamiento y reemplazo. Nada de eso cabe en el presupuesto de USD 8 millones.",
+    "Marte: descartado por física. Solo serviría para usuarios en Marte o trabajos por lotes, no para este chat.",
+]
+
+
+def build_location(wb):
+    ws = wb.create_sheet("Ubicación")
+    title(ws, "Ubicación y centro de datos",
+          "Colocation: el proveedor pone edificio, electricidad, enfriamiento y seguridad; nosotros los servidores.")
+    ncols = 7
+    ws.append([])
+    ws.append(["Nombre", "Concepto"] + CITIES + ["Unidad", "Fuente o cómo se obtiene"])
+    style_header(ws, ws.max_row, ncols)
+    hdr = ws.max_row
+    cols = ["C", "D", "E"]
+
+    rows, r = {}, ws.max_row
+    for item in LOCATION:
+        r += 1
+        if item[1] is not None:
+            rows[item[0]] = r
+    for item in LOCATION:
+        if item[1] is None:
+            ws.append([item[0]])
+            style_section(ws, ws.max_row, ncols)
+            continue
+        key, label, vals, unit, fmt, src = item
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value="" if key.startswith("in_") else key)
+        ws.cell(row=r, column=2, value=label)
+        for i, col in enumerate(cols):
+            cell = ws.cell(row=r, column=3 + i)
+            if isinstance(vals, list):
+                cell.value = vals[i]
+                cell.font = INPUT_FONT
+            else:
+                cell.value = vals.format(c=col, **rows)
+            cell.number_format = fmt
+        ws.cell(row=r, column=6, value=unit)
+        ws.cell(row=r, column=7, value=src)
+        style_body(ws, r, ncols)
+        if not key.startswith("in_"):
+            # value for the chosen city
+            add_name(wb, key, "Ubicación", "C", r)
+            wb.defined_names[key] = DefinedName(
+                key, attr_text=f"INDEX(Ubicación!$C${r}:$E${r},MATCH(UBICACION,Ubicación!$C${hdr}:$E${hdr},0))")
+    # chosen-city inputs too
+    for key, name in [("in_precio", "PRECIO_KWH"), ("in_emision", "FACTOR_EMISION"), ("in_renta", "RENTA_KW_MES")]:
+        rr = rows[key]
+        wb.defined_names[name] = DefinedName(
+            name, attr_text=f"INDEX(Ubicación!$C${rr}:$E${rr},MATCH(UBICACION,Ubicación!$C${hdr}:$E${hdr},0))")
+
+    for block in (PHYSICAL, EXOTIC):
+        ws.append([])
+        for item in block:
+            if item[1] is None:
+                ws.append([item[0]])
+                style_section(ws, ws.max_row, ncols)
+                continue
+            key, label, formula, unit, fmt, note = item
+            ws.append([key, label, formula, "", "", unit, note])
+            r = ws.max_row
+            ws.cell(row=r, column=3).number_format = fmt
+            style_body(ws, r, ncols)
+            add_name(wb, key, "Ubicación", "C", r)
+    for text in EXOTIC_TEXT:
+        ws.append(["", text])
+        r = ws.max_row
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=7)
+        ws.cell(row=r, column=2).alignment = WRAP
+        ws.row_dimensions[r].height = 32
+
+    ws.append([])
+    ws.append(["", "Fuentes: GlobalPetrolPrices (mar-2026), CBRE Global Data Center Trends 2026, WonderNetwork "
+               "(13-nov-2026), Ember 2025 vía agregadores, guía de usuario DGX H100/H200 y NASA. Consultadas el "
+               "13-nov-2026."])
+    ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
+
+    for col, width in zip("ABCDEFG", [16, 46, 16, 16, 16, 14, 62]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "C5"
+
+
 def build_log(wb):
     ws = wb.create_sheet("Registro")
     ws["A1"] = "Registro de decisiones y datos"
@@ -1089,6 +1271,7 @@ def main():
     build_inventory(wb)
     build_overload(wb)
     build_network(wb)
+    build_location(wb)
     build_log(wb)
     for ws in wb.worksheets:
         fit_page(ws)

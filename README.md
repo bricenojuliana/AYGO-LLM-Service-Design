@@ -33,4 +33,5 @@ In the Excel file, blue values are inputs typed by hand. Everything else should 
 - [x] Step 4: replicas, nodes and headroom (9 nodes, 72 GPUs, 18 replicas)
 - [x] Step 5: service architecture (logical and deployment diagrams, overload sheet)
 - [x] Step 6: networking and storage (traffic map, storage budget)
-- [ ] Step 7: location and data center
+- [x] Step 7: location (colocation in São Paulo vs Querétaro and Santiago; exotic options ruled out)
+- [ ] Step 8: power, energy and cooling

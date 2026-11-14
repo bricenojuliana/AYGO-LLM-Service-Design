@@ -75,3 +75,14 @@ Diagrama: `diagramas/mapa_trafico.png`.
 - Almacenamiento central: ~640 GB útiles (3 versiones del modelo, imágenes, datos, registros de 30 días) → ~3,9 TB brutos con 3 copias y holgura ×2.
 - Copia fuera del sitio: ~0,6 TB. Restaurar una versión del modelo por 1 Gb/s tarda ~19 min; esto entra en el RTO del paso 10. Tener la copia no prueba que se pueda restaurar a tiempo: hay que ensayarlo.
 - No se guardan conversaciones, así que no hay que respaldarlas.
+
+## 8. Ubicación e infraestructura
+
+- Colocation: el proveedor pone edificio, electricidad, enfriamiento, seguridad y conectividad; nosotros compramos y operamos los servidores. Así se aprovecha el ejemplo del enunciado de "adaptar una instalación existente".
+- Se compararon Querétaro, São Paulo y Santiago (hoja Ubicación). Gana São Paulo: electricidad más barata (0,146 USD/kWh) y más limpia (0,110 kg CO₂e/kWh), espacio más barato (USD 130–190/kW/mes), más capacidad libre (51,5 MW) y riesgo sísmico bajo.
+- Hallazgo que pesa mucho: con 0,2 s de red en el presupuesto del TTFT, solo São Paulo cumple para el peor usuario (188 ms con última milla, hacia Ciudad de México). Querétaro (223 ms hacia Bogotá, porque la ruta pasa por Miami) y Santiago (208 ms) no cumplen.
+- Al año en São Paulo: ~USD 117.000 de electricidad y ~USD 199.000 de renta; ~88 t CO₂e. En Querétaro serían ~USD 483.000 y ~379 t.
+- Riesgos: el precio de renta de CBRE es para 250–500 kW (el nuestro es ~104 kW, puede salir más caro por kW); CBRE menciona problemas de confiabilidad de la red eléctrica en algunas zonas de São Paulo, así que el proveedor debe tener UPS y generadores. Brasil habla portugués, pero eso no importa: los usuarios están en el resto de la región.
+- Diseño físico: 4 racks (3 de cómputo con 3 DGX cada uno + 1 de red y almacenamiento). Cada rack de cómputo: 24 U de 42, 30,6 kW, ~391 kg de servidores, 3.315 CFM de aire. El límite no es el espacio: es la energía y el calor. Si el proveedor solo soporta ~25 kW por rack, se pasa a 2 DGX por rack (6 racks).
+- Los DGX H100 se enfrían por aire: hace falta pasillo contenido o intercambiadores en la puerta trasera para ~31 kW por rack. No presentar enfriamiento líquido directo, porque este equipo no lo usa.
+- Opciones descartadas con números: Marte (la señal tarda 6 a 44 min ida y vuelta contra un TTFT de 2 s), órbita (mínimo ~251 m² de radiadores ideales, más radiación, eclipses y lanzamientos), submarino (cada reparación exige sacar la cápsula; Natick es un experimento).
