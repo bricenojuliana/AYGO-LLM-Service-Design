@@ -1883,14 +1883,14 @@ def build_ai_log(wb):
     title(ws, "Registro de uso de IA (§16)",
           "Una respuesta convincente no es evidencia. Filas en naranja = errores, omisiones o simplificaciones de la IA.")
     headers = ["#", "Herramienta", "Pregunta relevante", "Resultado usado", "Verificación humana",
-               "Corrección realizada", "Confirmación"]
+               "Corrección realizada"]
     ncols = len(headers)
     ws.append([])
     ws.append(headers)
     style_header(ws, ws.max_row, ncols)
     err_fill = PatternFill("solid", fgColor="FBE9DD")
-    for i, (is_err, q, res, ver, cor, conf) in enumerate(AI_LOG, start=1):
-        ws.append([i, AI_TOOL, q, res, ver, cor, conf])
+    for i, (is_err, q, res, ver, cor, _) in enumerate(AI_LOG, start=1):
+        ws.append([i, AI_TOOL, q, res, ver, cor])
         r = ws.max_row
         style_body(ws, r, ncols)
         if is_err:
@@ -1903,7 +1903,7 @@ def build_ai_log(wb):
     ws.cell(row=ws.max_row, column=2).font = Font(bold=True)
     ws.append(["", "No se adjuntan conversaciones completas ni datos sensibles."])
     ws.cell(row=ws.max_row, column=2).font = NOTE_FONT
-    for col, width in zip("ABCDEFG", [4, 20, 30, 30, 36, 40, 16]):
+    for col, width in zip("ABCDEF", [4, 20, 32, 32, 40, 44]):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A5"
 

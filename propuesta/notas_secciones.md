@@ -138,4 +138,3 @@ Hoja "Uso de IA": 10 consultas, 6 con errores, omisiones o simplificaciones (má
 5. Dato de memoria sin fuente: ~990 TFLOPS densos de la H100; NVIDIA solo publica la cifra con sparsity.
 6. Omisión: el calor declarado del DGX (11,3 kW) no coincide con los 10,2 kW.
 
-La columna de verificación humana debe reflejar lo que Juliana revisó por su cuenta antes de entregar.
